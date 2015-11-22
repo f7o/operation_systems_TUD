@@ -4,7 +4,6 @@
 #include <linux/fs.h>
 #include <linux/proc_fs.h>
 #include <linux/kernel.h>
-#include <linux/string.h>
 
 #include <asm/uaccess.h>
 
@@ -13,7 +12,7 @@ MODULE_DESCRIPTION("Lab Solution");
 MODULE_LICENSE("GPL");
 
 // max number of chars to print the time
-#define PROCFS_SIZE 64
+#define OUTSTR_SIZE 64
 
 // --- globals ---
 // proc pointers
@@ -27,15 +26,39 @@ const char* mod_name = "time_mod";
 // 0 for sec and 1 for yyyy-mm-dd hh:MM:sec
 char format_option = 0;
 
+// --- globals end ---
+
 static ssize_t generate_pretty_time(char* buf, time_t sec)
 {
 	struct tm time;
 
 	time_to_tm(sec, 0, &time);
 
-	return snprintf(buf, PROCFS_SIZE, "current time: %ld-%d-%d %d:%d:%d%c", 
+	return snprintf(buf, OUTSTR_SIZE, "current time: %ld-%d-%d %d:%d:%d%c", 
 		time.tm_year + 1900, time.tm_mon +1, time.tm_mday, 
 		time.tm_hour, time.tm_min, time.tm_sec, '\0');
+}
+
+// just a little helper for copying data to the user 
+static ssize_t send_data(char* to, const char* from, 
+						int offset, int length, int count)
+{
+	int bytes_to_copy = 1; 
+	// only copy the requested amount of data
+	if (count < length - offset)
+		bytes_to_copy = count;
+	else
+		bytes_to_copy = length - offset;
+
+	printk(KERN_INFO "--- %s: trying to copy '%s'\n", mod_name, from);
+
+	// move string to user space
+	if (copy_to_user(to, from + offset, bytes_to_copy))
+	{
+		printk(KERN_INFO "--- %s: copy failed!\n", mod_name);
+		return -1;	// which errno should be used here?
+	}
+	return bytes_to_copy;
 }
 
 // handles read calls to procfs_time.
@@ -46,22 +69,17 @@ static ssize_t time_read(struct file *file, char *buf, size_t count, loff_t *ppo
 {
 	// is there a better solution than this? (thread safe)
 	static bool complete = false;
+	// keep track of smaller reads (calling this function multiple times)
+	static int bytes_read = 0;
 
-	if (complete)
+	if (complete || 0 == count)
 	{	// return with 0 read chars if complete (eof reached)
 		printk(KERN_INFO "--- %s: (time) reading complete!\n", mod_name);		
-		complete = false; 	// setup further reads
+		// setup further reads
+		complete = false; 	
+		bytes_read = 0;
 		return 0;
 	}
-
-	if (count < PROCFS_SIZE)
-	{
-		printk(KERN_INFO "--- %s: (time) buffer too small!\n", mod_name);	
-		return -EINVAL;
-	}	
-
-	// reading completes after one run
-	complete = true;
 
 	printk(KERN_INFO "--- %s: (time) reading... \n", mod_name);
 
@@ -69,22 +87,27 @@ static ssize_t time_read(struct file *file, char *buf, size_t count, loff_t *ppo
 	struct timeval time;
 	do_gettimeofday(&time);
 
-	// make a string
-	char out_str[PROCFS_SIZE];
+	// make a correctly formated time string
+	char out_str[OUTSTR_SIZE];
 	int length = 0;
 	if (0 == format_option)
-		length = snprintf(out_str, PROCFS_SIZE, "current time: %ld seconds%c", time.tv_sec, '\0');
+		length = snprintf(out_str, OUTSTR_SIZE, "current time: %ld seconds%c", time.tv_sec, '\0');
 	else if (1 == format_option)
 		length = generate_pretty_time(out_str, time.tv_sec);
+	
+	int success_count = send_data(buf, out_str, bytes_read, length, count);
+	// check for failed data copy
+	if (-1 == success_count)
+		return -1;
 
-	printk(KERN_INFO "--- %s: (time) trying to copy '%s'\n", mod_name, out_str);
-	if (copy_to_user(buf, out_str, length))
-	{
-		printk(KERN_INFO "--- %s: (time) copy failed!\n", mod_name);
-		return -1;	// which errno should be used here?
-	}
+	// the new offset
+	bytes_read += success_count;
 
-	return length;
+	// reading completes if all bytes are read
+	if (bytes_read >= length)
+		complete = true;
+
+	return success_count;
 }
 
 // handles read calls to procfs_config
@@ -92,41 +115,42 @@ static ssize_t time_read(struct file *file, char *buf, size_t count, loff_t *ppo
 static ssize_t config_read(struct file *file, char *buf, size_t count, loff_t *ppos)
 {
 	static bool complete = false;
+	// keep track of smaller reads (calling this function multiple times)
+	static int bytes_read = 0;
 
-	if (complete)
+	if (complete || 0 == count)
 	{	// return with 0 read chars if complete (eof reached)
 		printk(KERN_INFO "--- %s: (config) reading complete!\n", mod_name);		
-		complete = false; 	// setup further reads
+		// setup further reads
+		complete = false; 	
+		bytes_read = 0;
 		return 0;
-	}
-
-	if (count < PROCFS_SIZE)
-	{
-		printk(KERN_INFO "--- %s: (config) buffer too small!\n", mod_name);	
-		return -EINVAL;
 	}	
-
-	// reading completes after one run
-	complete = true;
 
 	printk(KERN_INFO "--- %s: (config) reading... \n", mod_name);
 
-	char out_str[PROCFS_SIZE];
+	char out_str[OUTSTR_SIZE];
 	int length = 0;
-	length = snprintf(out_str, PROCFS_SIZE, "current clock format: %d%c", format_option, '\0');
+	length = snprintf(out_str, OUTSTR_SIZE, "current clock format: %d%c", format_option, '\0');
 
-	printk(KERN_INFO "--- %s: (config) trying to copy '%s'\n", mod_name, out_str);
-	if (copy_to_user(buf, out_str, length))
-	{
-		printk(KERN_INFO "--- %s: (config_read) copy failed!\n", mod_name);
-		return -1;	// which errno should be used here?
-	}
+	int success_count = send_data(buf, out_str, bytes_read, length, count);
+	// check for failed data copy
+	if (-1 == success_count)
+		return -1;
 
-	return length;
+	// the new offset
+	bytes_read += success_count;
+
+	// reading completes if all bytes are read
+	if (bytes_read >= length)
+		complete = true;
+
+	return success_count;
 }
 
 // handels writes to procfs_config.
 // every input beyond the first char is disregarded.
+// returns the number of byte written or...
 // returns -1 on failure
 //		-> buf may only point to '0' or '1'
 static ssize_t config_write(struct file *file, const char *buf, size_t count, loff_t *ppos)
@@ -144,7 +168,7 @@ static ssize_t config_write(struct file *file, const char *buf, size_t count, lo
 	else
 	{
 		printk(KERN_INFO "--- %s: format_option not set! only '0' or '1' allowed!\n", mod_name);
-		return -1;
+		return -EINVAL;
 	}
 	return 1;
 }
