@@ -63,7 +63,7 @@ static ssize_t send_data(char* to, const char* from,
 	return bytes_to_copy;
 }
 
-// this method is executed when reading from the module
+// proc write
 static ssize_t fifo_conf_read(struct file *file, char *buf, size_t count, loff_t *ppos)
 {
 	// is there a better solution than this? (thread safe)
@@ -100,10 +100,10 @@ static ssize_t fifo_conf_read(struct file *file, char *buf, size_t count, loff_t
 	return success_count;
 }
 
-// this method is executed when writing to the module
+// proc read
 static ssize_t fifo_conf_write(struct file *file, const char *buf, size_t count, loff_t *ppos)
 {
-	if (count > 4 || count < 1)
+	if (count > 5 || count < 2)
 	{
 		printk(KERN_INFO "--- %s: size not set! error: input size.\n", mod_name);
 		return -EINVAL;
@@ -143,10 +143,11 @@ static ssize_t fifo_read(struct file *file, char *buf, size_t count, loff_t *ppo
 	{
 		success_count = send_data(buf, buffer, fifo_front, fifo_stored, count);
 		fifo_front += success_count;
+		fifo_stored -= success_count;
 	}	
 	else
 	{
-		
+		// todo: implement a wrap arround copy (look ar resize)
 	}
 
 	return success_count;
@@ -154,6 +155,7 @@ static ssize_t fifo_read(struct file *file, char *buf, size_t count, loff_t *ppo
 
 static ssize_t fifo_write(struct file *file, const char *buf, size_t count, loff_t *ppos)
 {
+	// todo
 	return 0;
 }
 
@@ -183,23 +185,23 @@ static void resize(void)
 // e.g. for both read and write operations
 static int fifo_open(struct inode * inode, struct file * file)
 {
+	// todo: 	implement some way to force an open failure if
+	//			the the fifo_mod is allready in use!
+
+	// check for right device
 	if (iminor(inode) > 1 || iminor(inode) < 0 || imajor(inode) != DEVICEMAJOR)
 	{
 		printk(KERN_INFO "--- %s fifo_open failed!\n", mod_name);
 		return -ENODEV;
-	}
-	
-	/*
-	// get a pointer to the device
-	struct cdev* dev;
-	dev = container_of(inode->i_cdev, struct cdev, cdev);
-	// store the pointer in the file struct (passed to read and write)
-	*/
+	}	
+
+	// let the file point to the device buffer
 	file->private_data = buffer;
 
 	if (fifo_size != fifo_new_size)
 		resize();
 
+	// create buffer, freed in cleanup function
 	if (0 == buffer)
 		buffer = kmalloc(fifo_size, GFP_KERNEL);
 
@@ -209,11 +211,12 @@ static int fifo_open(struct inode * inode, struct file * file)
 // this method releases the module and makes it available for new operations
 static int fifo_release(struct inode * inode, struct file * file)
 {
+	// nothing to do here it seems
 	return 0;
 }
 
 
-// module's file operations, a module may need more of these
+// the device fops
 static struct file_operations fifo_fops = {
 	.owner =	THIS_MODULE,
 	.read =		fifo_read,
@@ -222,6 +225,7 @@ static struct file_operations fifo_fops = {
 	.release =	fifo_release,
 };
 
+// the associated proc fops
 static struct file_operations config_fops = {
 	.owner =	THIS_MODULE,
 	.read =		fifo_conf_read,
@@ -242,11 +246,14 @@ static int __init fifo_mod_init(void)
 	}
 
 	// register the device, nodes have to be created manually
+	__register_chrdev(DEVICEMAJOR, 0, 2, "fifo", &fifo_fops);
+	/*
 	if (__register_chrdev(DEVICEMAJOR, 0, 2, "fifo", &fifo_fops) != DEVICEMAJOR)
 	{
 		printk(KERN_INFO "--- %s registration of chrdev failed!\n", mod_name);
 		return -1;
-	}	
+	}
+	*/	
 
 	printk(KERN_INFO "--- %s is being loaded.\n", mod_name);
 	return 0;
