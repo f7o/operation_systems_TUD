@@ -1,6 +1,14 @@
 #ifndef INCLUDE_FIFO
 #define INCLUDE_FIFO
 
+#include <linux/errno.h>
+#include <linux/kernel.h>
+#include <linux/slab.h>
+
+#include <asm/uaccess.h>
+
+#define BUF_MAXSIZE 4096
+
 struct fifo_dev {
 
 	// --- device info ---
@@ -26,9 +34,9 @@ struct fifo_dev {
 ssize_t fifo_read(struct fifo_dev*, char*, size_t);
 ssize_t fifo_write(struct fifo_dev*, const char*, size_t);
 
-ssize_t fifo_resize(struct fifo_dev*, size_t);
+int fifo_resize(struct fifo_dev*, size_t);
 
-void fifo_init(struct fifo_dev*, size_t);
-void fifo_destroy(struct fifo_dev*);
+int fifo_init(struct fifo_dev*, size_t);
+int fifo_destroy(struct fifo_dev*);
 
 #endif
