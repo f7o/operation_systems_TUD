@@ -21,7 +21,9 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 	size_t success_count;
 
 	// will be copied to user space
-	char* tmp;
+	char* data_to_copy;
+	// iterator for data_to_copy
+	char* it;
 
 	// local counter for dev->front
 	size_t front = dev->front;
@@ -43,18 +45,19 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 		read = dev->stored;
 	}
 
-	tmp = kmalloc(success_count, GFP_KERNEL);
+	data_to_copy = kmalloc(success_count, GFP_KERNEL);
+	it = data_to_copy;
 
 	while (read--)
 	{
-		*tmp++ = *(dev->buffer + front);
+		*it++ = *(dev->buffer + front);
 		front = (front +1)%dev->size;
 	}
 
-	if (copy_to_user(buf, tmp, success_count))
+	if (copy_to_user(buf, data_to_copy, success_count))
 	{
 		printk(KERN_INFO "--- fifo read failed: copy_to_user failed!\n");
-		kfree(tmp);
+		kfree(data_to_copy);
 		return -EFAULT;
 	}
 
@@ -63,7 +66,7 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 	dev->stored -= success_count;
 	dev->read_bytes += success_count;
 
-	kfree(tmp);
+	kfree(data_to_copy);
 	return success_count;
 }
 
@@ -82,7 +85,7 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 ssize_t fifo_write(struct fifo_dev* dev, const char* buf, size_t count)
 {
 	// copied data from user sapce
-	char* tmp;
+	char* user_data;
 
 	size_t write = count;
 
@@ -98,17 +101,17 @@ ssize_t fifo_write(struct fifo_dev* dev, const char* buf, size_t count)
 		return -ENOBUFS;
 	}
 
-	tmp = kmalloc(count, GFP_KERNEL);
-	if (copy_from_user(tmp, buf, count))
+	user_data = kmalloc(count, GFP_KERNEL);
+	if (copy_from_user(user_data, buf, count))
 	{
 		printk(KERN_INFO "--- fifo write failed: copy_from_user failed!\n");
-		kfree(tmp);
+		kfree(user_data);
 		return -EFAULT;
 	}
 
 	while (write--)
 	{
-		*(dev->buffer + dev->end) = *tmp++;
+		*(dev->buffer + dev->end) = *user_data++;
 		dev->end = (dev->end +1)%dev->size;
 	}
 
@@ -116,7 +119,7 @@ ssize_t fifo_write(struct fifo_dev* dev, const char* buf, size_t count)
 	dev->stored += count;
 	dev->write_bytes += count;
 
-	kfree(tmp);
+	kfree(user_data);
 	return count;
 }
 
