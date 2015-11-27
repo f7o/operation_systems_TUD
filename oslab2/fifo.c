@@ -10,9 +10,9 @@ struct fifo_dev;
  * @count: the number of bytes
  *
  * returns: 
- *			the number of bytes actualy read 
- *			-ENODEV if dev is a null pointer
- *			-EFAULT if copy from kernel to user space failed
+ *	the number of bytes actualy read 
+ *	-ENODEV if dev is a null pointer
+ *	-EFAULT if copy from kernel to user space failed
  */
 ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 {
@@ -74,10 +74,10 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
  * @count: the number of bytes
  *
  * returns: 
- * 			the number of bytes actualy written
- *			-ENODEV if dev is a null pointer
- *			-ENOBUFS if remaining buffer space is too small
- *			-EFAULT if copy from user to kernel space failed
+ * 	the number of bytes actualy written
+ *	-ENODEV if dev is a null pointer
+ *	-ENOBUFS if remaining buffer space is too small
+ *	-EFAULT if copy from user to kernel space failed
  */
 ssize_t fifo_write(struct fifo_dev* dev, const char* buf, size_t count)
 {
@@ -126,10 +126,10 @@ ssize_t fifo_write(struct fifo_dev* dev, const char* buf, size_t count)
  * @new_size: new buffer size
  *
  * returns: 
- *			EINVAL if new_size is too small
- *			ENODEV if dev is a null pointer
- *			EINVAL if size > BUF_MAXSIZE
- *			0 on success
+ *	EINVAL if new_size is too small
+ *	ENODEV if dev is a null pointer
+ *	EINVAL if size > BUF_MAXSIZE
+ *	0 on success
  */
 int fifo_resize(struct fifo_dev* dev, size_t new_size)
 {
@@ -152,7 +152,7 @@ int fifo_resize(struct fifo_dev* dev, size_t new_size)
 		return EINVAL;
 	}
 
-	if (new_size > BUF_MAXSIZE)
+	if (new_size > BUF_MAXSIZE || new_size < BUF_MINSIZE)
 	{
 		printk(KERN_INFO "--- fifo resize failed: invalid size!\n");
 		return EINVAL;
@@ -186,10 +186,10 @@ int fifo_resize(struct fifo_dev* dev, size_t new_size)
  * @size: buffer size or 0 for default size (BUF_MAXSIZE)
  *
  * returns: 
- *			EPERM if device has allready been used 
- * 			ENODEV if dev is a null pointer
- *			EINVAL if size > BUF_MAXSIZE
- * 			0 on success
+ *	EPERM if device has allready been used 
+ * 	ENODEV if dev is a null pointer
+ *	EINVAL if size > BUF_MAXSIZE
+ * 	0 on success
  */
 int fifo_init(struct fifo_dev* dev, size_t size)
 {
@@ -205,7 +205,7 @@ int fifo_init(struct fifo_dev* dev, size_t size)
 		return EPERM;
 	}
 
-	if (size > BUF_MAXSIZE)
+	if (size > BUF_MAXSIZE || size < BUF_MINSIZE)
 	{
 		printk(KERN_INFO "--- fifo initialization failed: invalid size!\n");
 		return EINVAL;
@@ -223,7 +223,7 @@ int fifo_init(struct fifo_dev* dev, size_t size)
 	dev->front = 0;
 	dev->end = 0;
 
-	buffer = kmalloc(dev->size, GFP_KERNEL);
+	dev->buffer = kmalloc(dev->size, GFP_KERNEL);
 
 	return 0;
 }
@@ -233,8 +233,8 @@ int fifo_init(struct fifo_dev* dev, size_t size)
  * @dev: the fifo device
  *
  * returns:
- * 			ENODEV if dev is a null pointer
- *			0 on success
+ * 	ENODEV if dev is a null pointer
+ *	0 on success
  */
 int fifo_destroy(struct fifo_dev* dev)
 {

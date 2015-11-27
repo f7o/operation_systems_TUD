@@ -8,6 +8,7 @@
 #include <asm/uaccess.h>
 
 #define BUF_MAXSIZE 4096
+#define BUF_MINSIZE 4
 
 struct fifo_dev {
 
