@@ -67,6 +67,11 @@ static ssize_t send_data(char* to, const char* from,
 // returns the amount of chars read or 0 if eof is reached 
 static ssize_t time_read(struct file *file, char *buf, size_t count, loff_t *ppos)
 {
+	struct timeval time;
+	char out_str[OUTSTR_SIZE];
+	int success_count = 0;
+	int length = 0;
+	
 	// is there a better solution than this? (thread safe)
 	static bool complete = false;
 	// keep track of smaller reads (calling this function multiple times)
@@ -84,18 +89,15 @@ static ssize_t time_read(struct file *file, char *buf, size_t count, loff_t *ppo
 	printk(KERN_INFO "--- %s: (time) reading... \n", mod_name);
 
 	// get the time
-	struct timeval time;
 	do_gettimeofday(&time);
 
 	// make a correctly formated time string
-	char out_str[OUTSTR_SIZE];
-	int length = 0;
 	if (0 == format_option)
 		length = snprintf(out_str, OUTSTR_SIZE, "current time: %ld seconds%c", time.tv_sec, '\0');
 	else if (1 == format_option)
 		length = generate_pretty_time(out_str, time.tv_sec);
 	
-	int success_count = send_data(buf, out_str, bytes_read, length, count);
+	success_count = send_data(buf, out_str, bytes_read, length, count);
 	// check for failed data copy
 	if (-1 == success_count)
 		return -1;
@@ -114,6 +116,10 @@ static ssize_t time_read(struct file *file, char *buf, size_t count, loff_t *ppo
 // returns the amount of chars read or 0 if eof is reached 
 static ssize_t config_read(struct file *file, char *buf, size_t count, loff_t *ppos)
 {
+	char out_str[OUTSTR_SIZE];
+	int length = 0;
+	int success_count = 0;
+
 	static bool complete = false;
 	// keep track of smaller reads (calling this function multiple times)
 	static int bytes_read = 0;
@@ -129,11 +135,9 @@ static ssize_t config_read(struct file *file, char *buf, size_t count, loff_t *p
 
 	printk(KERN_INFO "--- %s: (config) reading... \n", mod_name);
 
-	char out_str[OUTSTR_SIZE];
-	int length = 0;
 	length = snprintf(out_str, OUTSTR_SIZE, "current clock format: %d%c", format_option, '\0');
 
-	int success_count = send_data(buf, out_str, bytes_read, length, count);
+	success_count = send_data(buf, out_str, bytes_read, length, count);
 	// check for failed data copy
 	if (-1 == success_count)
 		return -1;

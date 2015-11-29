@@ -1,8 +1,8 @@
-obj-m := fifo_mod.o
+obj-m := fifo_mod.o time_mod.o
 #time_mod-y := time_mod.o
-fifo_mod-y := fifo.o fifo_test.o
+fifo_mod-y := fifo.o fifo_new.o
 
-ccflags-y := -Wall -std=gnu99 -Wno-declaration-after-statement
+ccflags-y := -Wall #-std=gnu99 -Wno-declaration-after-statement
 PWD := $(shell pwd)
 KVER := $(shell uname -r)
 
