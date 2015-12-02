@@ -31,7 +31,6 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 	if (0 == dev)
 	{
 		printk(KERN_INFO "--- fifo read failed: no device!\n");
-		--dev->used;
 		return -ENODEV;
 	}
 
@@ -44,7 +43,10 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 	++dev->used;
 
 	if (0 == dev->stored)
+	{
+		--dev->used;
 		return 0;
+	}
 
 	if (count < dev->stored)
 	{
