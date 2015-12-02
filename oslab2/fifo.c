@@ -28,11 +28,17 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 	// local counter for dev->front
 	size_t front = dev->front;
 
+	++dev->used;
+
 	if (0 == dev)
 	{
 		printk(KERN_INFO "--- fifo read failed: no device!\n");
+		--dev->used;
 		return -ENODEV;
 	}
+
+	if (0 == dev->stored)
+		return 0;
 
 	if (count < dev->stored)
 	{
@@ -58,6 +64,7 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 	{
 		printk(KERN_INFO "--- fifo read failed: copy_to_user failed!\n");
 		kfree(data_to_copy);
+		--dev->used;
 		return -EFAULT;
 	}
 
@@ -67,6 +74,9 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 	dev->read_bytes += success_count;
 
 	kfree(data_to_copy);
+
+	--dev->used;
+
 	return success_count;
 }
 
@@ -86,32 +96,40 @@ ssize_t fifo_write(struct fifo_dev* dev, const char* buf, size_t count)
 {
 	// copied data from user sapce
 	char* user_data;
+	// the user_data iterator
+	char* it;
 
 	size_t write = count;
+
+	++dev->used;
 
 	if (0 == dev)
 	{
 		printk(KERN_INFO "--- fifo write failed: no device!\n");
+		--dev->used;
 		return -ENODEV;
 	}
 
 	if (count > dev->size - dev->stored)
 	{
 		printk(KERN_INFO "--- fifo write failed: not enough space remaining!\n");
+		--dev->used;
 		return -ENOBUFS;
 	}
 
 	user_data = kmalloc(count, GFP_KERNEL);
+	it = user_data;
 	if (copy_from_user(user_data, buf, count))
 	{
 		printk(KERN_INFO "--- fifo write failed: copy_from_user failed!\n");
 		kfree(user_data);
+		--dev->used;
 		return -EFAULT;
 	}
 
 	while (write--)
 	{
-		*(dev->buffer + dev->end) = *user_data++;
+		*(dev->buffer + dev->end) = *it++;
 		dev->end = (dev->end +1)%dev->size;
 	}
 
@@ -120,6 +138,9 @@ ssize_t fifo_write(struct fifo_dev* dev, const char* buf, size_t count)
 	dev->write_bytes += count;
 
 	kfree(user_data);
+
+	--dev->used;
+
 	return count;
 }
 
@@ -143,24 +164,29 @@ int fifo_resize(struct fifo_dev* dev, size_t new_size)
 	// bytes to copy
 	size_t left;
 
+	++dev->used;
+
 	if (0 == dev)
 	{
 		printk(KERN_INFO "--- fifo resize failed: no device!\n");
+		--dev->used;
 		return ENODEV;
 	}
 
 	if (new_size < dev->stored)
 	{
 		printk(KERN_INFO "--- fifo resize failed: new size too small!\n");
+		--dev->used;
 		return EINVAL;
 	}
 
 	if (new_size > BUF_MAXSIZE || new_size < BUF_MINSIZE)
 	{
 		printk(KERN_INFO "--- fifo resize failed: invalid size!\n");
+		--dev->used;
 		return EINVAL;
 	}
-
+	
 	new_buf = kmalloc(new_size, GFP_KERNEL);
 	it = new_buf;
 	left = dev->stored;
@@ -179,6 +205,8 @@ int fifo_resize(struct fifo_dev* dev, size_t new_size)
 	//cleanup and buffer change
 	kfree(dev->buffer);
 	dev->buffer = new_buf;
+
+	--dev->used;
 
 	return 0;
 }
@@ -227,6 +255,8 @@ int fifo_init(struct fifo_dev* dev, size_t size)
 	dev->end = 0;
 
 	dev->buffer = kmalloc(dev->size, GFP_KERNEL);
+
+	dev->used = 0;
 
 	return 0;
 }

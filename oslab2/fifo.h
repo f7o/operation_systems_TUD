@@ -29,7 +29,8 @@ struct fifo_dev {
 	// the device buffer
 	char* buffer;
 
-	// add a cdev struct? only if we can create it, somehow...
+	// used flag, as in: implementation of a race condition...
+	int used;
 };
 
 ssize_t fifo_read(struct fifo_dev*, char*, size_t);
