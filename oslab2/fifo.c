@@ -28,14 +28,20 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 	// local counter for dev->front
 	size_t front = dev->front;
 
-	++dev->used;
-
 	if (0 == dev)
 	{
 		printk(KERN_INFO "--- fifo read failed: no device!\n");
 		--dev->used;
 		return -ENODEV;
 	}
+
+	if (dev->used)
+	{
+		printk(KERN_INFO "--- fifo write failed: fifo already in use!\n");
+		return -EBUSY;
+	}
+
+	++dev->used;
 
 	if (0 == dev->stored)
 		return 0;
@@ -101,14 +107,20 @@ ssize_t fifo_write(struct fifo_dev* dev, const char* buf, size_t count)
 
 	size_t write = count;
 
-	++dev->used;
-
 	if (0 == dev)
 	{
 		printk(KERN_INFO "--- fifo write failed: no device!\n");
 		--dev->used;
 		return -ENODEV;
 	}
+
+	if (dev->used)
+	{
+		printk(KERN_INFO "--- fifo write failed: fifo already in use!\n");
+		return -EBUSY;
+	}
+
+	++dev->used;
 
 	if (count > dev->size - dev->stored)
 	{
@@ -164,14 +176,20 @@ int fifo_resize(struct fifo_dev* dev, size_t new_size)
 	// bytes to copy
 	size_t left;
 
-	++dev->used;
-
 	if (0 == dev)
 	{
 		printk(KERN_INFO "--- fifo resize failed: no device!\n");
 		--dev->used;
 		return ENODEV;
 	}
+
+	if (dev->used)
+	{
+		printk(KERN_INFO "--- fifo resize failed: fifo already in use!\n");
+		return -EBUSY;
+	}
+
+	++dev->used;
 
 	if (new_size < dev->stored)
 	{

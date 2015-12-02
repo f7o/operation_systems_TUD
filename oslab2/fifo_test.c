@@ -24,8 +24,10 @@ void* _write(void* arg)
 		}
 
 		success = write(file, s, 10);
-		if (success)
+		if (success > 0)
 			printf("write: success\n");
+		else
+			printf("write failed: error %s\n", strerror(-success));
 
 		close(file);
 		usleep(500000);
@@ -50,11 +52,15 @@ void* _read(void* arg)
 		}
 
 		success = read(file, s, 8);
-		if (success)
+		if (success > 0)
 		{
 			s[success] = '\0';
 			printf("read: success; '%s'\n", s);
 		}
+		else if (0 == success)
+			printf("read: nothing to read");
+		else
+			printf("read: error %s\n", strerror(-success));
 
 		close(file);
 		usleep(500000);
@@ -84,9 +90,7 @@ void* _resize(void* arg)
 
 		success = write(file, s, 4);
 		if (success > 0)
-			printf("resize: success; set size to %s\n", s);
-		else
-			printf("resize: failed; tried size %s\n", s);
+			printf("resize: tried size %s\n", s);
 
 		close(file);
 		usleep(500000);
