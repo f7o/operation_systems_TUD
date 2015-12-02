@@ -277,7 +277,7 @@ static int create_dev_nodes(void)
 	err = cdev_add(cdev_read, read_num, 1);
 	if (err)
 	{
-		destroy_dev_nodes(0, 0);
+		destroy_dev_nodes(0, 1);
 		return err;
 	}
 
