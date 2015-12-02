@@ -36,7 +36,7 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 
 	if (dev->used)
 	{
-		printk(KERN_INFO "--- fifo write failed: fifo already in use!\n");
+		printk(KERN_INFO "--- fifo read failed: fifo already in use!\n");
 		return -EBUSY;
 	}
 
