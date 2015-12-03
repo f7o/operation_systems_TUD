@@ -99,17 +99,17 @@ static ssize_t config_write(struct file *file, const char *buf, size_t count, lo
 	size_t new_size;
 
 	// the local buffer
-	char local[5];
+	char local[6];
 
 	// do nothing if flag is taken
 	if (dev.used)
 	{
-		printk(KERN_INFO "--- %s: no resize while reading or writing!\n", mod_name);
+		printk(KERN_INFO "--- %s: no resize while busy!\n", mod_name);
 		return -EBUSY;
 	}
 
 	// throw away wrong sizes (yes, there seems to be no \0 char hat the end)
-	if (count > 4 || count < 1)
+	if (count > 5 || count < 1)
 	{
 		printk(KERN_INFO "--- %s: size not set! error: input size was %lu\n", mod_name, count);
 		return -EINVAL;

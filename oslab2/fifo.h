@@ -30,7 +30,7 @@ struct fifo_dev {
 	char* buffer;
 
 	// used flag, as in: implementation of a race condition...
-	int used;
+	bool used;
 };
 
 ssize_t fifo_read(struct fifo_dev*, char*, size_t);

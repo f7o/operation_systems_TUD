@@ -40,11 +40,11 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 		return -EBUSY;
 	}
 
-	++dev->used;
+	dev->used = true;
 
 	if (0 == dev->stored)
 	{
-		--dev->used;
+		dev->used = false;
 		return 0;
 	}
 
@@ -72,7 +72,7 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 	{
 		printk(KERN_INFO "--- fifo read failed: copy_to_user failed!\n");
 		kfree(data_to_copy);
-		--dev->used;
+		dev->used = false;
 		return -EFAULT;
 	}
 
@@ -83,7 +83,7 @@ ssize_t fifo_read(struct fifo_dev* dev, char* buf, size_t count)
 
 	kfree(data_to_copy);
 
-	--dev->used;
+	dev->used = false;
 
 	return success_count;
 }
@@ -121,12 +121,12 @@ ssize_t fifo_write(struct fifo_dev* dev, const char* buf, size_t count)
 		return -EBUSY;
 	}
 
-	++dev->used;
+	dev->used = true;
 
 	if (count > dev->size - dev->stored)
 	{
 		printk(KERN_INFO "--- fifo write failed: not enough space remaining!\n");
-		--dev->used;
+		dev->used = false;
 		return -ENOBUFS;
 	}
 
@@ -136,7 +136,7 @@ ssize_t fifo_write(struct fifo_dev* dev, const char* buf, size_t count)
 	{
 		printk(KERN_INFO "--- fifo write failed: copy_from_user failed!\n");
 		kfree(user_data);
-		--dev->used;
+		dev->used = false; 
 		return -EFAULT;
 	}
 
@@ -152,7 +152,7 @@ ssize_t fifo_write(struct fifo_dev* dev, const char* buf, size_t count)
 
 	kfree(user_data);
 
-	--dev->used;
+	dev->used = false;
 
 	return count;
 }
@@ -189,19 +189,19 @@ int fifo_resize(struct fifo_dev* dev, size_t new_size)
 		return -EBUSY;
 	}
 
-	++dev->used;
+	dev->used = true;
 
 	if (new_size < dev->stored)
 	{
 		printk(KERN_INFO "--- fifo resize failed: new size too small!\n");
-		--dev->used;
+		dev->used = false;
 		return EINVAL;
 	}
 
 	if (new_size > BUF_MAXSIZE || new_size < BUF_MINSIZE)
 	{
 		printk(KERN_INFO "--- fifo resize failed: invalid size!\n");
-		--dev->used;
+		dev->used = false;
 		return EINVAL;
 	}
 	
@@ -224,7 +224,7 @@ int fifo_resize(struct fifo_dev* dev, size_t new_size)
 	kfree(dev->buffer);
 	dev->buffer = new_buf;
 
-	--dev->used;
+	dev->used = false;
 
 	return 0;
 }
@@ -274,7 +274,7 @@ int fifo_init(struct fifo_dev* dev, size_t size)
 
 	dev->buffer = kmalloc(dev->size, GFP_KERNEL);
 
-	dev->used = 0;
+	dev->used = false;
 
 	return 0;
 }
