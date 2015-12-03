@@ -7,13 +7,15 @@
 #include <string.h>
 #include <errno.h>
 
+int size = 128;
+
 void* _write(void* arg)
 {
 	int file;
 	int success = 1;
 	const char* s = "foo bar 42";
 
-	while (success)
+	while (1)
 	{
 		file = open("/dev/fifo0", O_WRONLY);
 		if (-1 == file)
@@ -41,7 +43,7 @@ void* _read(void* arg)
 	int success = 1;
 	char s[9];
 
-	while (success)
+	while (1)
 	{
 		file = open("/dev/fifo1", O_RDONLY);
 		if (-1 == file)
@@ -72,10 +74,9 @@ void* _resize(void* arg)
 {
 	int file;
 	int success = 1;
-	int size = 64;
 	char s[4];
 
-	while (success)
+	while (1)
 	{
 		file = open("/proc/fifo_config", O_WRONLY);
 		if (-1 == file)
@@ -85,7 +86,7 @@ void* _resize(void* arg)
 			continue;
 		}
 
-		size = (size+1)%64 + 4;
+		size = (size+1)%64 + 20;
 		sprintf(s, "%d", size);
 
 		success = write(file, s, 4);
@@ -103,14 +104,16 @@ int main()
 	printf("creating threads...\n");
 	pthread_t write;
 	pthread_t read;
-	pthread_t resize;
+	pthread_t resize1;
+	pthread_t resize2;
 
 	int err = pthread_create(&write, 0, _write, 0);
 	err = pthread_create(&read, 0, _read, 0);
 
-	usleep(150000);
+	//usleep(150000);
 
-	err = pthread_create(&resize, 0, _resize, 0);
+	err = pthread_create(&resize1, 0, _resize, 0);
+	err = pthread_create(&resize2, 0, _resize, 0);
 
 	printf("threads created!\n");
 
@@ -119,7 +122,8 @@ int main()
 
 	err = pthread_join(write, (void**)&ret);
 	err = pthread_join(read, (void**)&ret);
-	err = pthread_join(resize, (void**)&ret);
+	err = pthread_join(resize1, (void**)&ret);
+	err = pthread_join(resize2, (void**)&ret);
 
 	if (err)
 		printf("thread join failed.\n");
