@@ -29,7 +29,7 @@ static int get_deeds_pretty_seconds(struct seq_file *m, void *v)
 	time_to_tm(tv.tv_sec, 0, &pt);
 
 	seq_printf(m, "current time: %ld-%02d-%02d  %02d:%02d:%02d\n", 
-			pt.tm_year + 1900, pt.tm_mon + 1, pt.tm_mday, pt.tm_hour, pt.tm_min, pt.tm_sec);
+			pt.tm_year + 1900, pt.tm_mon + 1, pt.tm_mday, pt.tm_hour+ 1, pt.tm_min, pt.tm_sec);
 	return 0;
 }
 
@@ -66,12 +66,12 @@ static ssize_t time_config_write(struct file *file, const char *buffer, size_t c
 {
 
 
-	if(count > 2) 
+	if(count > 1) 
 	{	// only 0 or 1 with null termination
 		return -EFAULT;
 	}
 
-	printk(KERN_INFO "count: %lu buffer: %s", count, buffer); // look at the output, maybe somebody can explain it!
+	printk(KERN_INFO "count: %lu", count); // look at the output, maybe somebody can explain it!
 	if(copy_from_user(&time_config, buffer, 1))
 	{
 		return -EFAULT;
