@@ -67,8 +67,8 @@ static ssize_t time_config_write(struct file *file, const char *buffer, size_t c
 
 
 	if(count > 1) 
-	{	// only 0 or 1 with null termination
-		return -EFAULT;
+	{	// only single character without any termination
+		return -EINVAL;
 	}
 
 	printk(KERN_INFO "count: %lu", count); // look at the output, maybe somebody can explain it!
@@ -85,7 +85,7 @@ static ssize_t time_config_write(struct file *file, const char *buffer, size_t c
 	}
 	 else 
 	{
-		return -EFAULT;
+		return -EINVAL;
 	}
 
 }
