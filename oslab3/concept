@@ -1,0 +1,79 @@
+kernel_prod_cons:
+
+	has:
+		name		// runtime
+		delay		// runtime
+		message		// runtime
+		struct data_item*
+
+	on init:
+		create work queue
+
+	on destroy:
+		kill work queue
+
+	somehow call a function:
+		while loop creating work queue items with given delay
+		provide distict sources for consumer and producer, calling different
+		functions in the work queue items
+
+	create/destroy data_items
+
+	print to kernel logs
+
+user_prod_cons:
+	
+	one program doing both, configurabe via cmd parameter
+
+	has:
+		name		// runtime
+		delay		// runtime
+		message		// runtime
+
+	rate controll in user space?
+
+	send strings to fifo, no data_items
+
+	print to stdout
+
+	clean interupts; no indefinit blocking
+
+fifo:
+	
+	on init:
+		init semaphores
+		set given size
+
+	sequence count
+	
+	store data_item struct instance ptrs
+
+		struct data_item {
+			unsigned int qid;
+			unsigned long long time;
+			char * msg;
+		}
+
+	// counting semaphores, check in interface
+	semaphore for empty
+	semaphore for full	
+
+	// check in queue context
+	mutex for read ptr
+	mutex for write ptr
+
+fifo interface:
+	
+	try to wait on semaphores here
+
+	kernel interface
+		export functions
+		takes a data_item
+
+	user interface
+		dev node needed
+			do this dynamicly this time:
+			a module local cdev struct may be used for this.
+		takes a string, makes a data_item
+		use seqfile for print ops
+		take a look at the kernel interface, re-use functions
