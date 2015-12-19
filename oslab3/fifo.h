@@ -6,6 +6,7 @@
 #include <linux/slab.h>
 #include <linux/semaphore.h>
 #include <linux/mutex.h>
+#include <linux/string.h>
 
 #include <asm/uaccess.h>
 
@@ -40,13 +41,17 @@ struct fifo_dev {
 	struct semaphore full;
 	struct semaphore empty;
 
-	// mutex protection for front and end
+	// mutex protection for front (removals) and end (insertitions, seq_no)
 	struct mutex read;
 	struct mutex write;
 };
 
-ssize_t fifo_read(struct fifo_dev* dev, struct data_item* item);
-ssize_t fifo_write(struct fifo_dev* dev, struct data_item* item);
+struct data_item* alloc_di(char*, unsigned long long);
+struct data_item* alloc_di_str(char* str);
+void free_di(struct data_item*);
+
+struct data_item* fifo_read(struct fifo_dev*);
+int fifo_write(struct fifo_dev*, struct data_item*);
 
 int fifo_init(struct fifo_dev*, size_t);
 int fifo_destroy(struct fifo_dev*);

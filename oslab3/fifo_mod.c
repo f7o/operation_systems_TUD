@@ -7,6 +7,7 @@
 #include <linux/kernel.h>		// util functions
 #include <linux/cdev.h>			// cdev
 #include <linux/device.h>		// device struct in create_dev_node
+#include <linux/string.h>		// strlen
 
 #include <asm/uaccess.h>		// user space memory access
 
@@ -16,7 +17,7 @@ MODULE_AUTHOR("Name");
 MODULE_DESCRIPTION("Lab Solution");
 MODULE_LICENSE("GPL");
 
-#define DEV_NAME "fifo"
+#define DEV_NAME "deeds_fifo"
 
 // -------- globals ------------------------------------------------------
 // proc pointer for the virtual stats file
@@ -40,10 +41,32 @@ const char* mod_name = "fifo_mod";
 
 // -------- exported functions, fifo access ------------------------------
 
-	/* todo: 	implement the kernel interface and export the functions.
-	 * 			this functions should be the only interface to the fifo
-	 *			struct. just map the userspace access to them. 
-	 */
+// TODO: export these functions
+/*
+ *	If space is available, the given input is inserted at fifo.end
+ *
+ * 	@input: the data item to be insterted
+ * 
+ * 	returns:
+ *		0 on success
+ *		see fifo_read
+ */
+static int put(struct data_item* input)
+{
+	return fifo_write(&fifo, input);
+}
+
+/*
+ *	If the fifo is not empty, output will be the item at fifo.front
+ * 
+ *	returns:
+ *		ptr to a data_item on success
+ *		ERR_PTR(see fifo_read)
+ */
+struct data_item* get(void)
+{
+	return fifo_read(&fifo);
+}
 // -------- exported functions, fifo access end ------------------------------
 
 // -------- user space access --------------------------------------------
@@ -58,7 +81,7 @@ static int dev_open(struct inode* inode, struct file* filp)
 {
 	if (imajor(inode) != MAJOR(dev_no) || iminor(inode) != MINOR(dev_no))
 	{
-		printk(KERN_INFO "---- %s: dev_open failed, wrong device number(s)!", mod_name);
+		printk(KERN_INFO "---- %s: dev_open failed, wrong device number(s)!\n", mod_name);
 		return ENODEV;
 	}
 
@@ -66,27 +89,87 @@ static int dev_open(struct inode* inode, struct file* filp)
 
 	return 0;
 }
-
 /*
  * implements user read
  *
  * returns:
- * 	0 on success
+ * 	no of read bytes on success
+ * 	
  */
 static ssize_t dev_read(struct file *file, char *buf, size_t count, loff_t *ppos)
 {
-	return 0;
+	char* return_str;
+	struct data_item* di;
+	ssize_t real_count = 0;
+
+	// only one read!
+	if (*ppos != 0)		// possible race condition? file.ppos should (TM) be per thread?
+		return 0;
+
+	// read from fifo
+	di = get();
+	if (IS_ERR(di))
+		return -PTR_ERR(di);
+
+	return_str = kmalloc(count * sizeof(char), GFP_KERNEL);
+	real_count = snprintf(return_str, count, "[%lu][%llu] %s",
+							di->qid, di->time, di->msg);
+
+	// free the memory not needed anymore
+	free_di(di);
+
+	if (copy_to_user(buf, return_str, real_count))
+	{
+		printk(KERN_INFO "--- %s: dev_read; copy_to_user failed!\n", mod_name);
+		real_count = -EFAULT;
+	}
+
+	*ppos = real_count;
+
+	kfree(return_str);
+	return real_count;
 }
 
 /*
  * implements user write
  *
  * returns:
- * 	0 on success
+ * 	count on success
+ * 	-EFAULT if copy_from_user failed
+ *	-EINVAL if contents of buf are malformed
  */
 static ssize_t dev_write(struct file *file, const char *buf, size_t count, loff_t *ppos)
 {
-	return 0;
+	ssize_t ret;
+	struct data_item* di;
+	char* str = kmalloc((count + 1) * sizeof(char), GFP_KERNEL);
+
+	if (copy_from_user(str, buf, count))
+	{
+		printk(KERN_INFO "--- %s: dev_write; copy_from_user failed!\n", mod_name);
+		ret = -EFAULT;
+		goto out;
+	}
+
+	// force zero termination
+	str[count] = '\0'; 
+
+	// get a data_item struct
+	di = alloc_di_str(str);
+	if (IS_ERR(di))
+	{
+		ret =  -PTR_ERR(di);
+		goto out;
+	}
+
+	// write to fifo
+	ret = -put(di);
+	if (0 == ret)
+		ret = count;
+
+out:
+	kfree(str);
+	return ret;
 }
 
 static int dev_release(struct inode* inode, struct file* filp)
@@ -109,7 +192,7 @@ static struct file_operations dev_fops = {
 // -------- stats --------------------------------------------------------
 static int stats_read(struct seq_file* seq, void* v)
 {
-	seq_printf(seq, "implement me!");
+	seq_printf(seq, "implement me!\n");
 	return 0;
 }
 
@@ -132,21 +215,34 @@ static struct file_operations stat_fops = {
 /*
  * destroys the device node, unregisters the cdev form the kernel
  *
- * @dev: node exists := 2, device exists := 1, nothing := 0
+ * @dev: 	node exists := 3, device exists := 2, 
+ 			class exists := 1, nothing := 0
  *
 */
 static void destroy_dev_node(int dev)
 {
-	if (2 == dev)
+	switch (dev)
 	{
-		device_destroy(dev_class, dev_no);
-		cdev_del(&k_c_dev);
+		case 3:
+		{
+			device_destroy(dev_class, dev_no);
+			cdev_del(&k_c_dev);	
+			class_destroy(dev_class);
+			break;
+		}
+		case 2:
+		{
+			cdev_del(&k_c_dev);	
+			class_destroy(dev_class);
+			break;
+		}
+		case 1:
+		{
+			class_destroy(dev_class);
+			break;	
+		}
+		default: break;
 	}
-	else if (1 == dev)
-		cdev_del(&k_c_dev);
-
-	if (dev_class)
-		class_destroy(dev_class);
 
 	unregister_chrdev_region(dev_no, 1);
 }
@@ -172,7 +268,8 @@ static int create_dev_node(void)
 	struct device* device;
 
 	// get a major number
-	if (alloc_chrdev_region(&dev_no, 0, 1, DEV_NAME))
+	err = alloc_chrdev_region(&dev_no, 0, 1, DEV_NAME);
+	if (err)
 		return err;
 
 	// register a dev class
@@ -191,7 +288,7 @@ static int create_dev_node(void)
 	err = cdev_add(&k_c_dev, dev_no, 1);
 	if (err)
 	{
-		destroy_dev_node(0);
+		destroy_dev_node(1);
 		return err;
 	}
 
@@ -203,7 +300,7 @@ static int create_dev_node(void)
 							DEV_NAME);
 	if (IS_ERR(device))
 	{
-		destroy_dev_node(1);
+		destroy_dev_node(2);
 		return PTR_ERR(device);
 	}
 	return 0;
@@ -247,15 +344,15 @@ static int __init fifo_mod_init(void)
 	}
 
 	printk(KERN_INFO "--- %s: is being loaded.\n", mod_name);
-	return 0;
+	return err;
 }
 
 static void __exit fifo_mod_cleanup(void)
 {
-	proc_remove(proc_stats);
-
 	fifo_destroy(&fifo);
-	destroy_dev_node(2);
+
+	proc_remove(proc_stats);
+	destroy_dev_node(3);
 
 	printk(KERN_INFO "--- %s: is being unloaded.\n", mod_name);
 }
