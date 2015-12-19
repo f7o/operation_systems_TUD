@@ -27,11 +27,15 @@ struct data_item* alloc_di_str(char* str)
 	char* sub_str = str;
 
 	// ignore everything until the first ','
-	strsep(&sub_str, ",");		// sub_str points right after the first ','
-	
+	strsep(&sub_str, ","); 		// sub_str points right after the first ',' 
+	if (0 == sub_str)
+		return ERR_PTR(-EINVAL);
+
 	// get the creation time, let strsep create the needed zero termination
 	sub_str_begin = sub_str;
 	strsep(&sub_str, ",");		// sub_str points right after the second ','
+	if (0 == sub_str)
+		return ERR_PTR(-EINVAL);
 
 	err = kstrtoull(sub_str_begin, 0, &time);
 	if (err)
@@ -47,17 +51,23 @@ struct data_item* alloc_di_str(char* str)
 }
 
 /**
- * Free the memory allocated to a data_item struct
- * 
- * @di: the data_item to deallocate
+ * Make a data_item from a message and the creation time.
+ * A call to this function allocates memory amd needs a complementing 
+ * call to free_di at some point in time!
+ *
+ * @str: the string specifying the data_item msg.
+ * @time: creation time of the struct or 0 to get the time during execution 
+ *
+ * returns:
+ * 	a pointer to the created struct
  */
-struct data_item* alloc_di(char* str, unsigned long long time)
+struct data_item* alloc_di(char* msg, unsigned long long time)
 {
 	// allocate memory
 	struct data_item* item = kmalloc(sizeof(struct data_item), GFP_KERNEL);
 
 	item->qid = 0;
-	item->msg = str;
+	item->msg = msg;
 
 	if (0 == time)
 	{

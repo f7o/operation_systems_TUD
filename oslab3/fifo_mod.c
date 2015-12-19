@@ -7,7 +7,6 @@
 #include <linux/kernel.h>		// util functions
 #include <linux/cdev.h>			// cdev
 #include <linux/device.h>		// device struct in create_dev_node
-#include <linux/string.h>		// strlen
 
 #include <asm/uaccess.h>		// user space memory access
 
@@ -21,22 +20,26 @@ MODULE_LICENSE("GPL");
 
 // -------- globals ------------------------------------------------------
 // proc pointer for the virtual stats file
-struct proc_dir_entry* proc_stats = 0;
+static struct proc_dir_entry* proc_stats = 0;
 
 // the actual fifo queue
-struct fifo_dev fifo;
+static struct fifo_dev fifo;
 
 // the kernel char device struct, used in create_dev_node 
-struct cdev k_c_dev;
+static struct cdev k_c_dev;
 
 // ptr to the dev class registered within the kernel
-struct class* dev_class;
+static struct class* dev_class;
 
 // the acquired dev number (minor and major), dev_open checks for it
-dev_t dev_no;
+static dev_t dev_no;
 
 // name of the LKM
-const char* mod_name = "fifo_mod";
+static char* mod_name = "deeds_fifo";
+
+// module parameter to configure the fifo size
+static size_t size = 0;
+module_param(size, ulong, 0);
 // -------- globals end --------------------------------------------------
 
 // -------- exported functions, fifo access ------------------------------
@@ -90,11 +93,13 @@ static int dev_open(struct inode* inode, struct file* filp)
 	return 0;
 }
 /*
- * implements user read
+ * Implements user read.
+ * Forces reading of one data_item by returning 0 on any file offset > 0.
  *
  * returns:
- * 	no of read bytes on success
- * 	
+ * 	number of read bytes on success, 0 on second try
+ * 	-EFAULT if copy_to_user failed
+ *	see get
  */
 static ssize_t dev_read(struct file *file, char *buf, size_t count, loff_t *ppos)
 {
@@ -192,7 +197,9 @@ static struct file_operations dev_fops = {
 // -------- stats --------------------------------------------------------
 static int stats_read(struct seq_file* seq, void* v)
 {
-	seq_printf(seq, "implement me!\n");
+	int relative_usage = (fifo.empty.count*100)/fifo.size;
+	seq_printf(seq, "size: %lu\nused: %d\nempty: %d\nusage percent: %d\n\ncurrent seq_no: %llu\ninsertitions: %lu\nremovals: %lu\n\nuser access count: %lu\n\n",
+				fifo.size, fifo.empty.count, fifo.full.count, relative_usage, fifo.seq_no, fifo.insertitions, fifo.removals, module_refcount(THIS_MODULE));
 	return 0;
 }
 
@@ -317,7 +324,7 @@ static int __init fifo_mod_init(void)
 {
 	int err;
 
-	err = fifo_init(&fifo, 0);
+	err = fifo_init(&fifo, size);
 	if (err)
 	{
 		printk(KERN_INFO "--- %s: fifo_init failed!\n", mod_name);	
