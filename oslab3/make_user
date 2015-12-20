@@ -1,0 +1,12 @@
+CC = gcc
+CFLAGS = -Wall
+NAME = generic_user
+
+ODIR = obj
+
+default: $(NAME).o
+	$(CC) $(CFLAGS) $(NAME).o -o $(NAME)
+	@echo $(NAME) compiled!
+
+clean:
+	rm -f $(NAME).o $(NAME)

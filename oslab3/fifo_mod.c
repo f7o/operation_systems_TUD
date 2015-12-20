@@ -44,7 +44,6 @@ module_param(size, ulong, 0);
 
 // -------- exported functions, fifo access ------------------------------
 
-// TODO: export these functions
 /*
  *	If space is available, the given input is inserted at fifo.end
  *
@@ -58,6 +57,7 @@ static int put(struct data_item* input)
 {
 	return fifo_write(&fifo, input);
 }
+EXPORT_SYMBOL(put);
 
 /*
  *	If the fifo is not empty, output will be the item at fifo.front
@@ -68,8 +68,9 @@ static int put(struct data_item* input)
  */
 struct data_item* get(void)
 {
-	return fifo_read(&fifo);
+	return fifo_read(&fifo);	
 }
+EXPORT_SYMBOL(get);
 // -------- exported functions, fifo access end ------------------------------
 
 // -------- user space access --------------------------------------------
@@ -336,7 +337,7 @@ static int __init fifo_mod_init(void)
 
 	if (0 == proc_stats) 
 	{
-		printk(KERN_INFO "--- %s: creation of proc/deeds_fifo_stats failed!\n", mod_name);
+		printk(KERN_INFO "--- %s: creation of /proc/deeds_fifo_stats failed!\n", mod_name);
 		fifo_destroy(&fifo);
 		return -1;
 	}

@@ -1,5 +1,6 @@
-obj-m := fifo_lkm.o
+obj-m := fifo_lkm.o producer_lkm1.o
 fifo_lkm-y := fifo.o fifo_mod.o
+producer_lkm1-y := producer_mod.o
 
 ccflags-y := -Wall
 PWD := $(shell pwd)

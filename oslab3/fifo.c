@@ -80,6 +80,7 @@ struct data_item* alloc_di(char* msg, unsigned long long time)
 
 	return item;
 }
+EXPORT_SYMBOL(alloc_di);
 
 /**
  * Free the memory allocated to a data_item struct
