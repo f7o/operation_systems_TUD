@@ -29,8 +29,8 @@ static char* mod_name = "kprod";
 module_param(mod_name, charp, 0);
 
 // module parameter to configure the fifo size
-static int rate = 2;
-module_param(rate, int, 0);
+static int interval_ms = 1000;
+module_param(interval_ms, int, 0);
 
 // termination controll
 static int continue_exec = 1;
@@ -68,7 +68,7 @@ void produce(struct work_struct* ws)
 	}
 
 	if (continue_exec)
-		queue_delayed_work(wqs, &work, rate*HZ);
+		queue_delayed_work(wqs, &work, interval_ms*HZ/1000);
 }
 
 /*
@@ -86,7 +86,7 @@ static int __init producer_mod_init(void)
 		return -ENOMEM;
 	}
 
-	queue_delayed_work(wqs, &work, rate*HZ);
+	queue_delayed_work(wqs, &work, interval_ms*HZ/1000);
 
 	printk(KERN_INFO "--- %s: is being loaded.\n", mod_name);
 	return 0;

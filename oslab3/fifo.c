@@ -125,7 +125,7 @@ EXPORT_SYMBOL(free_di);
  * Does nothing if devs buffer is not empty!
  * 
  * @dev: the device used by this function
- * @name: the lkm module name, yes the name obtainable from THISMODULE!
+ * @name: the lkm module name, yes the name obtainable from THIS_MODULE!
  *
  * returns:
  *	ENODEV if dev is a null pointer
@@ -185,7 +185,7 @@ out:
  * Does nothing if devs buffer is not full!
  * 
  * @dev: the device used by this function
- * @name: the lkm module name, yes the name obtainable from THISMODULE!
+ * @name: the lkm module name, yes the name obtainable from THIS_MODULE!
  *
  * returns:
  *	ENODEV if dev is a null pointer
@@ -246,7 +246,7 @@ out:
  * 		to do the next up(...) of their respective semaphores!
  * 
  * @dev: the device used by this function
- * @name: the lkm module name, yes the name obtainable from THISMODULE!
+ * @name: the lkm module name, yes the name obtainable from THIS_MODULE!
  *
  * returns:
  * 	0 as kill command
@@ -278,7 +278,7 @@ static int fifo_try_kill(struct fifo_dev* dev, const char* name)
  * This function may block!
  *
  * @dev: the fifo device
- * @name: 	name of the calling lkm (obtained from THISMODULE),
+ * @name: 	name of the calling lkm (obtained from THIS_MODULE),
  * 			or 0 for user space.
  *
  * returns: 
@@ -330,7 +330,7 @@ struct data_item* fifo_read(struct fifo_dev* dev, const char* name)
  *
  * @dev: the fifo device
  * @item: the data_item ptr which will be written
- * @name: 	name of the calling lkm (obtained from THISMODULE),
+ * @name: 	name of the calling lkm (obtained from THIS_MODULE),
  * 			or 0 for user space.
  *
  * returns: 

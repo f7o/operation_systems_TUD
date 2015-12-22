@@ -8,7 +8,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-int rate = 2;
+int interval_ms = 1000;
 char* name = "gneric_user";
 char* msg = "this is a message";
 size_t size_receive = 256;
@@ -25,7 +25,10 @@ void produce(void)
 
 	while (1)
 	{
-		sleep(rate);
+		if (interval_ms < 1000)
+			usleep(interval_ms*1000);
+		else
+			sleep(interval_ms/1000);
 
 		file = open("/dev/deeds_fifo", O_WRONLY);
 		if (-1 == file)
@@ -55,7 +58,10 @@ void consume(void)
 
 	while (1)
 	{
-		sleep(rate);
+		if (interval_ms < 1000)
+			usleep(interval_ms*1000);
+		else
+			sleep(interval_ms/1000);
 
 		file = open("/dev/deeds_fifo", O_RDONLY);
 		if (-1 == file)
@@ -93,7 +99,7 @@ int main(int argc, char* const* argv)
 			msg = optarg;
 			break;
 		case 'r':
-			rate = atoi(optarg);
+			interval_ms = atoi(optarg);
 			break;
 		case 'n':
 			name = optarg;
@@ -102,7 +108,7 @@ int main(int argc, char* const* argv)
 			size_receive = atoi(optarg);
 			break;
 		default:
-			fprintf(stderr, "Usage: [-p msg] [-r rate] [-n name] [-s size_receive]\n");
+			fprintf(stderr, "Usage: [-p msg] [-r interval_ms] [-n name] [-s size_receive]\n");
 			return -1;
 		}
 	}

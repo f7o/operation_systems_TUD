@@ -219,7 +219,7 @@ static struct file_operations dev_fops = {
 static int stats_read(struct seq_file* seq, void* v)
 {
 	int relative_usage = (fifo.empty.count*100)/fifo.size;
-	seq_printf(seq, "size: %lu\nused: %d\nempty: %d\nusage percent: %d\n\ncurrent seq_no: %llu\ninsertitions: %lu\nremovals: %lu\n\nuser access count: %lu\n\n",
+	seq_printf(seq, "size: %lu\nused: %d\nempty: %d\nusage percent: %d\n\ncurrent seq_no: %llu\ninsertitions: %lu\nremovals: %lu\n\naccess count: %lu\n\n",
 				fifo.size, fifo.empty.count, fifo.full.count, relative_usage, fifo.seq_no, fifo.insertitions, fifo.removals, module_refcount(THIS_MODULE));
 	return 0;
 }
