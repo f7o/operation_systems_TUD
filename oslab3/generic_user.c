@@ -77,6 +77,9 @@ void consume(void)
 			continue;
 		}
 
+		if (success < size_receive)
+			csv[success] = '\0';
+
 		printf("[%s]%s\n", name, csv);
 
 		close(file);
@@ -89,7 +92,7 @@ int main(int argc, char* const* argv)
 {
 	char c;
 
-	while ((c = getopt(argc, argv, "p:r:n:s:")) != -1)
+	while ((c = getopt(argc, argv, "p:i:n:s:")) != -1)
 	{
 		printf("%c\n", c);
 		switch (c)
@@ -98,7 +101,7 @@ int main(int argc, char* const* argv)
 			producer = 1;
 			msg = optarg;
 			break;
-		case 'r':
+		case 'i':
 			interval_ms = atoi(optarg);
 			break;
 		case 'n':
@@ -108,7 +111,7 @@ int main(int argc, char* const* argv)
 			size_receive = atoi(optarg);
 			break;
 		default:
-			fprintf(stderr, "Usage: [-p msg] [-r interval_ms] [-n name] [-s size_receive]\n");
+			fprintf(stderr, "Usage: [-p msg] [-i interval_ms] [-n name] [-s size_receive]\n");
 			return -1;
 		}
 	}
