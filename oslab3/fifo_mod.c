@@ -190,6 +190,8 @@ static ssize_t dev_write(struct file *file, const char *buf, size_t count, loff_
 	ret = -put(di, 0);
 	if (0 == ret)
 		ret = count;
+	else
+		free_di(di);
 
 out:
 	kfree(str);
@@ -364,10 +366,10 @@ static int __init fifo_mod_init(void)
 
 static void __exit fifo_mod_cleanup(void)
 {
-	fifo_destroy(&fifo);
-
-	proc_remove(proc_stats);
 	destroy_dev_node(3);
+	proc_remove(proc_stats);
+
+	fifo_destroy(&fifo);
 
 	printk(KERN_INFO "--- %s: is being unloaded.\n", mod_name);
 }
