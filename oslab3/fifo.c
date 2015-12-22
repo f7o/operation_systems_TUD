@@ -134,6 +134,7 @@ EXPORT_SYMBOL(free_di);
  */
 int fifo_request_kill_read(struct fifo_dev* dev, const char* name)
 {
+	int ref_count;
 	int ret = 0;
 
 	if (0 == dev)
@@ -141,6 +142,8 @@ int fifo_request_kill_read(struct fifo_dev* dev, const char* name)
 		printk(KERN_INFO "--- kill failed: null ptr device!\n");
 		return ENODEV;
 	}
+
+	//printk(KERN_INFO "--- %s: request_kill started!\n", name);
 
 	// block if write is in progress
 	if (mutex_lock_interruptible(&dev->write))
@@ -153,17 +156,24 @@ int fifo_request_kill_read(struct fifo_dev* dev, const char* name)
 		return ERESTARTSYS;
 	}
 
+	//printk(KERN_INFO "--- %s: request_kill acquired both mutexes!\n", name);
+
 	// buffer not empty, return
 	if (dev->insertitions != dev->removals)
+	{
+		printk(KERN_INFO "--- %s: request_kill nothing to do!\n", name);
 		goto out;
+	}
 
+	ref_count = module_refcount(THIS_MODULE);
 	dev->mod_to_kill = name;
 	dev->kill = 1;
 
-	while (dev->kill)
+	while (dev->kill && ref_count)
 	{
 		// allow one read
 		up(&dev->empty);
+		//printk(KERN_INFO "--- %s: request_kill up!\n", name);
 
 		// wait for fifo_read to do its thing
 		if (down_interruptible(&dev->wait_on_kill))
@@ -172,7 +182,10 @@ int fifo_request_kill_read(struct fifo_dev* dev, const char* name)
 			ret = ERESTARTSYS;
 			break;
 		}
+		--ref_count;
 	}
+
+	//printk(KERN_INFO "--- %s: request_kill terminates, releases mutexes!\n", name);
 
 out:
 	mutex_unlock(&dev->read);
@@ -194,6 +207,7 @@ out:
  */
 int fifo_request_kill_write(struct fifo_dev* dev, const char* name)
 {
+	int ref_count;
 	int ret = 0;
 
 	if (0 == dev)
@@ -201,6 +215,8 @@ int fifo_request_kill_write(struct fifo_dev* dev, const char* name)
 		printk(KERN_INFO "--- kill failed: null ptr device!\n");
 		return ENODEV;
 	}
+
+	//printk(KERN_INFO "--- %s: request_kill started!\n", name);
 
 	// block if write is in progress
 	if (mutex_lock_interruptible(&dev->write))
@@ -213,17 +229,24 @@ int fifo_request_kill_write(struct fifo_dev* dev, const char* name)
 		return ERESTARTSYS;
 	}
 
+	//printk(KERN_INFO "--- %s: request_kill acquired both mutexes!\n", name);
+
 	// buffer not full, return
 	if (dev->insertitions - dev->removals != dev->size)
+	{
+		printk(KERN_INFO "--- %s: request_kill nothing to do!\n", name);
 		goto out;
+	}
 
+	ref_count = module_refcount(THIS_MODULE);
 	dev->mod_to_kill = name;
 	dev->kill = 1;
 
-	while (dev->kill)
+	while (dev->kill && ref_count)
 	{
 		// allow one write
 		up(&dev->full);
+		//printk(KERN_INFO "--- %s: request_kill up!\n", name);
 
 		// wait for fifo_write to do its thing
 		if (down_interruptible(&dev->wait_on_kill))
@@ -232,7 +255,10 @@ int fifo_request_kill_write(struct fifo_dev* dev, const char* name)
 			ret = ERESTARTSYS;
 			break;
 		}
+		--ref_count;
 	}
+
+	//printk(KERN_INFO "--- %s: request_kill terminates, releases mutexes!\n", name);
 
 out:
 	mutex_unlock(&dev->read);
@@ -258,7 +284,10 @@ static int fifo_try_kill(struct fifo_dev* dev, const char* name)
 	
 	// user access; just queue the access again
 	if (0 == name)
+	{
+		//printk(KERN_INFO "--- fifo_try_kill: user, will not be killed!\n");
 		ret = -1;
+	}
 	// lkm access; kill it, if it is the right one ...
 	else if (0 == strcmp(name, dev->mod_to_kill))
 	{
@@ -266,6 +295,8 @@ static int fifo_try_kill(struct fifo_dev* dev, const char* name)
 		ret = 0;
 		printk(KERN_INFO "--- %s: will be killed!\n", name);
 	}
+
+	//printk(KERN_INFO "--- fifo_try_kill: '%s' and '%s' don't match!\n", name, dev->mod_to_kill);
 
 	up(&dev->wait_on_kill);
 	return ret;
@@ -303,6 +334,7 @@ struct data_item* fifo_read(struct fifo_dev* dev, const char* name)
 
 	if (dev->kill)
 	{
+		//printk(KERN_INFO "--- fifo_read: kill zone reached!\n");
 		if (0 == fifo_try_kill(dev, name))
 			return ERR_PTR(-EWOULDBLOCK);
 		else
@@ -353,6 +385,7 @@ int fifo_write(struct fifo_dev* dev, struct data_item* item, const char* name)
 
 	if (dev->kill)
 	{
+		//printk(KERN_INFO "--- fifo_write: kill zone reached!\n");
 		if (0 == fifo_try_kill(dev, name))
 			return EWOULDBLOCK;
 		else

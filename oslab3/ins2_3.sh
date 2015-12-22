@@ -2,12 +2,12 @@
 
 _term(){
 	echo "=== kill all user processes"
-	kill $uprod1
-	kill $uprod2
-	kill $uprod3
-	kill $ucons1
-	kill $ucons2
-	kill $kernlog
+	kill "$uprod1"
+	kill "$uprod2"
+	kill "$uprod3"
+	kill "$ucons1"
+	kill "$ucons2"
+	kill "$kernlog"
 }
 
 echo "=== delete files from previous run"
@@ -27,11 +27,11 @@ echo "=== all lkms loaded, executing generic_users..."
 
 ./kernel_loging.sh &
 kernlog=$!
-./generic_user -p "urfunny1" -i 333 -n "uprod1" &
+./generic_user -p "user1_is_funny" -i 333 -n "uprod1" &
 uprod1=$!
-./generic_user -p "urfunny2" -i 333 -n "uprod2" &
+./generic_user -p "user2_is_very_funny" -i 333 -n "uprod2" &
 uprod2=$!
-./generic_user -p "urfunny3" -i 200 -n "uprod3" &
+./generic_user -p "user3_is_NOT_funny!" -i 200 -n "uprod3" &
 uprod3=$!
 ./generic_user -i 500 -n "ucons1" >> ./user_log &
 ucons1=$!
