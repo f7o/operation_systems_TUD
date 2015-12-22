@@ -7,6 +7,7 @@
 #include <linux/kernel.h>		// util functions
 #include <linux/cdev.h>			// cdev
 #include <linux/device.h>		// device struct in create_dev_node
+#include <linux/slab.h>			// kmalloc/kfree
 
 #include <asm/uaccess.h>		// user space memory access
 
@@ -45,32 +46,49 @@ module_param(size, ulong, 0);
 // -------- exported functions, fifo access ------------------------------
 
 /*
- *	If space is available, the given input is inserted at fifo.end
+ * If space is available, the given input is inserted at fifo.end
  *
- * 	@input: the data item to be insterted
+ * @input: the data item to be insterted
+ * @name: 	name of the calling lkm (obtained from THISMODULE),
+ * 			or 0 for user space.
  * 
- * 	returns:
- *		0 on success
- *		see fifo_read
+ * returns:
+ *	0 on success
+ *	see fifo_write
  */
-static int put(struct data_item* input)
+static int put(struct data_item* input, const char* name)
 {
-	return fifo_write(&fifo, input);
+	return fifo_write(&fifo, input, name);
 }
 EXPORT_SYMBOL(put);
 
 /*
- *	If the fifo is not empty, output will be the item at fifo.front
+ * If the fifo is not empty, output will be the item at fifo.front
+ *
+ * @name: 	name of the calling lkm (obtained from THISMODULE),
+ * 			or 0 for user space.
  * 
- *	returns:
- *		ptr to a data_item on success
- *		ERR_PTR(see fifo_read)
+ * returns:
+ *	ptr to a data_item on success
+ *	ERR_PTR(see fifo_read)
  */
-struct data_item* get(void)
+struct data_item* get(const char* name)
 {
-	return fifo_read(&fifo);	
+	return fifo_read(&fifo, name);	
 }
 EXPORT_SYMBOL(get);
+
+int request_kill_read(const char* name)
+{
+	return fifo_request_kill_read(&fifo, name);
+}
+EXPORT_SYMBOL(request_kill_read);
+
+int request_kill_write(const char* name)
+{
+	return fifo_request_kill_write(&fifo, name);
+}
+EXPORT_SYMBOL(request_kill_write);
 // -------- exported functions, fifo access end ------------------------------
 
 // -------- user space access --------------------------------------------
@@ -113,7 +131,7 @@ static ssize_t dev_read(struct file *file, char *buf, size_t count, loff_t *ppos
 		return 0;
 
 	// read from fifo
-	di = get();
+	di = get(0);
 	if (IS_ERR(di))
 		return -PTR_ERR(di);
 
@@ -169,7 +187,7 @@ static ssize_t dev_write(struct file *file, const char *buf, size_t count, loff_
 	}
 
 	// write to fifo
-	ret = -put(di);
+	ret = -put(di, 0);
 	if (0 == ret)
 		ret = count;
 
@@ -231,28 +249,17 @@ static void destroy_dev_node(int dev)
 {
 	switch (dev)
 	{
-		case 3:
-		{
-			device_destroy(dev_class, dev_no);
-			cdev_del(&k_c_dev);	
-			class_destroy(dev_class);
-			break;
-		}
-		case 2:
-		{
-			cdev_del(&k_c_dev);	
-			class_destroy(dev_class);
-			break;
-		}
-		case 1:
-		{
-			class_destroy(dev_class);
-			break;	
-		}
-		default: break;
+		case 3: goto node;
+		case 2: goto dev;
+		case 1: goto class;
+		default: goto none;
 	}
 
-	unregister_chrdev_region(dev_no, 1);
+node:	device_destroy(dev_class, dev_no);
+dev:	cdev_del(&k_c_dev);	
+class:	class_destroy(dev_class);
+
+none:	unregister_chrdev_region(dev_no, 1);
 }
 
 // function for class struct setting the permissions for the dev node

@@ -10,13 +10,9 @@
 
 #include <asm/uaccess.h>
 
-#define BUF_STDSIZE 32
+#include "data_item.h"
 
-struct data_item {
-	size_t qid;
-	unsigned long long time;
-	char * msg;
-};
+#define BUF_STDSIZE 32
 
 struct fifo_dev {
 
@@ -34,6 +30,10 @@ struct fifo_dev {
 	// position of the first empty spot after the last element
 	size_t end;
 
+	// unblock parameters
+	int kill;
+	const char* mod_to_kill;
+
 	// the device buffer
 	struct data_item** buffer;
 
@@ -41,17 +41,26 @@ struct fifo_dev {
 	struct semaphore full;
 	struct semaphore empty;
 
-	// mutex protection for front (removals) and end (insertitions, seq_no)
+	// semaphore used during kill requests
+	struct semaphore wait_on_kill;
+
+	/* 
+	 * mutex protection for front (removals, kill_read) 
+	 * and end (insertitions, seq_no, kill_write)
+	 */
 	struct mutex read;
 	struct mutex write;
 };
 
-struct data_item* alloc_di(char*, unsigned long long);
+struct data_item* alloc_di(const char*, unsigned long long);
 struct data_item* alloc_di_str(char* str);
 void free_di(struct data_item*);
 
-struct data_item* fifo_read(struct fifo_dev*);
-int fifo_write(struct fifo_dev*, struct data_item*);
+struct data_item* fifo_read(struct fifo_dev*, const char*);
+int fifo_write(struct fifo_dev*, struct data_item*, const char*);
+
+int fifo_request_kill_read(struct fifo_dev*, const char*);
+int fifo_request_kill_write(struct fifo_dev*, const char*);
 
 int fifo_init(struct fifo_dev*, size_t);
 int fifo_destroy(struct fifo_dev*);

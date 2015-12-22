@@ -1,16 +1,15 @@
 #include <linux/module.h>
 #include <linux/init.h>
-#include <linux/kernel.h>		// time
-#include <linux/module.h>
+#include <linux/kernel.h>
 #include <linux/errno.h>		
 #include <linux/workqueue.h>
 #include <linux/moduleparam.h>
-#include <linux/string.h>
 #include <linux/slab.h>
 
+#include "data_item.h"
+
 // forward declarations
-struct data_item;
-void produce(struct work_struct*);
+void consume(struct work_struct*);
 
 MODULE_AUTHOR("Name");
 MODULE_DESCRIPTION("Lab Solution");
@@ -20,12 +19,8 @@ MODULE_LICENSE("GPL");
 // work queue struct ptr
 static struct workqueue_struct* wqs;
 
-// msg of the LKM
-static char* msg = "kernel_msg_foobar";
-module_param(msg, charp, 0);
-
 // name of the LKM
-static char* mod_name = "kprod";
+static char* mod_name = "kcons";
 module_param(mod_name, charp, 0);
 
 // module parameter to configure the fifo size
@@ -36,35 +31,29 @@ module_param(rate, int, 0);
 static int continue_exec = 1;
 
 // delayed work item
-DECLARE_DELAYED_WORK(work, produce);
+DECLARE_DELAYED_WORK(work, consume);
 // -------- globals end --------------------------------------------------
 
 // import from other modules
-extern int put(struct data_item*, const char*);
+extern struct data_item* get(const char*);
 extern void free_di(struct data_item*);
-extern struct data_item* alloc_di(const char*, unsigned long long);
-extern int request_kill_write(const char*);
+extern int request_kill_read(const char*);
 
 void stop_exec(struct work_struct* ws)
 {
-	request_kill_write(THIS_MODULE->name);
+	request_kill_read(THIS_MODULE->name);
 }
 
-void produce(struct work_struct* ws)
+void consume(struct work_struct* ws)
 {
-	int err = 0;
-	struct data_item* di;
-	struct timeval tv;
-
-	do_gettimeofday(&tv);
-
-	di = alloc_di(msg, tv.tv_sec);
-
-	err = put(di, THIS_MODULE->name);
-	if (err)
+	struct data_item* di = get(THIS_MODULE->name);
+	if (IS_ERR(di))
+		printk(KERN_INFO "--- %s: get failed (may have been killed)\n", mod_name);
+	else
 	{
-		free_di(di);
-		printk(KERN_INFO "--- %s: put failed (may have been killed)\n", mod_name);
+		printk(KERN_INFO "[%s][%lu][%llu] %s\n",
+					mod_name, di->qid, di->time, di->msg);
+		free_di(di);	
 	}
 
 	if (continue_exec)
@@ -74,10 +63,9 @@ void produce(struct work_struct* ws)
 /*
  * initializes the LKM
  * calls functions to create/init the following:
- *		the exec file in /proc
  *		the work queue
  */
-static int __init producer_mod_init(void)
+static int __init consumer_mod_init(void)
 {
 	wqs = alloc_workqueue(mod_name, WQ_UNBOUND, 2);
 	if (0 == wqs)
@@ -92,7 +80,7 @@ static int __init producer_mod_init(void)
 	return 0;
 }
 
-static void __exit producer_mod_cleanup(void)
+static void __exit consumer_mod_cleanup(void)
 {
 	DECLARE_WORK(kill, stop_exec);
 	continue_exec = 0;
@@ -112,5 +100,5 @@ static void __exit producer_mod_cleanup(void)
 	printk(KERN_INFO "--- %s: unloading complete!\n", mod_name);
 }
 
-module_init(producer_mod_init);
-module_exit(producer_mod_cleanup);
+module_init(consumer_mod_init);
+module_exit(consumer_mod_cleanup);

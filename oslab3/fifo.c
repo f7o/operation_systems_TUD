@@ -22,20 +22,25 @@ struct data_item* alloc_di_str(char* str)
 	int err;
 	unsigned long long time;
 
-	char* msg;
 	char* sub_str_begin = str;
 	char* sub_str = str;
 
 	// ignore everything until the first ','
 	strsep(&sub_str, ","); 		// sub_str points right after the first ',' 
 	if (0 == sub_str)
+	{
+		printk(KERN_INFO "--- malformed csv detected at first ','\n");
 		return ERR_PTR(-EINVAL);
+	}
 
 	// get the creation time, let strsep create the needed zero termination
 	sub_str_begin = sub_str;
 	strsep(&sub_str, ",");		// sub_str points right after the second ','
 	if (0 == sub_str)
+	{
+		printk(KERN_INFO "--- malformed csv detected at second ','\n");
 		return ERR_PTR(-EINVAL);
+	}
 
 	err = kstrtoull(sub_str_begin, 0, &time);
 	if (err)
@@ -44,10 +49,7 @@ struct data_item* alloc_di_str(char* str)
 		return ERR_PTR(-err);
 	}
 
-	msg = kmalloc(strlen(sub_str) * sizeof(char), GFP_KERNEL);
-	strcpy(msg, sub_str);
-
-	return alloc_di(msg, time);
+	return alloc_di(sub_str, time);
 }
 
 /**
@@ -55,20 +57,32 @@ struct data_item* alloc_di_str(char* str)
  * A call to this function allocates memory amd needs a complementing 
  * call to free_di at some point in time!
  *
- * @str: the string specifying the data_item msg.
+ * @msg: the string specifying the data_item msg.
  * @time: creation time of the struct or 0 to get the time during execution 
  *
  * returns:
  * 	a pointer to the created struct
  */
-struct data_item* alloc_di(char* msg, unsigned long long time)
+struct data_item* alloc_di(const char* msg, unsigned long long time)
 {
+	struct data_item* item;
+
+	if (0 == msg)
+	{
+		printk(KERN_INFO "--- alloc_di: no null ptr msg possible!\n");
+		return ERR_PTR(-EINVAL);
+	}
+	
 	// allocate memory
-	struct data_item* item = kmalloc(sizeof(struct data_item), GFP_KERNEL);
+	item = kmalloc(sizeof(struct data_item), GFP_KERNEL);
 
 	item->qid = 0;
-	item->msg = msg;
 
+	// store the message
+	item->msg = kmalloc(strlen(msg) * sizeof(char), GFP_KERNEL);
+	strcpy(item->msg, msg);
+
+	// store the time
 	if (0 == time)
 	{
 		struct timeval tv;
@@ -89,22 +103,191 @@ EXPORT_SYMBOL(alloc_di);
  */
 void free_di(struct data_item* di)
 {
-	kfree(di->msg);
-	kfree(di);
+	if (di != 0)
+	{
+		if (di->msg != 0)
+			kfree(di->msg);
+		else
+			printk(KERN_INFO "free_di failed: null ptr msg\n");
+
+		kfree(di);
+	}
+	else
+		printk(KERN_INFO "free_di failed: null ptr data_item\n");
 }
+EXPORT_SYMBOL(free_di);
+
+
+// -------- unblock ------------------------------------------------------
+
+/*
+ * Kill a specific, currently blocking reader.
+ * Does nothing if devs buffer is not empty!
+ * 
+ * @dev: the device used by this function
+ * @name: the lkm module name, yes the name obtainable from THISMODULE!
+ *
+ * returns:
+ *	ENODEV if dev is a null pointer
+ *	ERESTARTSYS if waiting for a lock was interrupted
+ * 	0 on success, or dev.buffer not empty
+ */
+int fifo_request_kill_read(struct fifo_dev* dev, const char* name)
+{
+	int ret = 0;
+
+	if (0 == dev)
+	{
+		printk(KERN_INFO "--- kill failed: null ptr device!\n");
+		return ENODEV;
+	}
+
+	// block if write is in progress
+	if (mutex_lock_interruptible(&dev->write))
+		return ERESTARTSYS;
+
+	// block if read is in progress
+	if (mutex_lock_interruptible(&dev->read))
+	{
+		mutex_unlock(&dev->write);
+		return ERESTARTSYS;
+	}
+
+	// buffer not empty, return
+	if (dev->insertitions != dev->removals)
+		goto out;
+
+	dev->mod_to_kill = name;
+	dev->kill = 1;
+
+	while (dev->kill)
+	{
+		// allow one read
+		up(&dev->empty);
+
+		// wait for fifo_read to do its thing
+		if (down_interruptible(&dev->wait_on_kill))
+		{
+			dev->kill = 0;
+			ret = ERESTARTSYS;
+			break;
+		}
+	}
+
+out:
+	mutex_unlock(&dev->read);
+	mutex_unlock(&dev->write);
+	return ret;
+}
+
+/*
+ * Kill a specific, currently blocking writer.
+ * Does nothing if devs buffer is not full!
+ * 
+ * @dev: the device used by this function
+ * @name: the lkm module name, yes the name obtainable from THISMODULE!
+ *
+ * returns:
+ *	ENODEV if dev is a null pointer
+ *	ERESTARTSYS if waiting for a lock was interrupted
+ * 	0 on success, or dev.buffer not full
+ */
+int fifo_request_kill_write(struct fifo_dev* dev, const char* name)
+{
+	int ret = 0;
+
+	if (0 == dev)
+	{
+		printk(KERN_INFO "--- kill failed: null ptr device!\n");
+		return ENODEV;
+	}
+
+	// block if write is in progress
+	if (mutex_lock_interruptible(&dev->write))
+		return ERESTARTSYS;
+
+	// block if read is in progress
+	if (mutex_lock_interruptible(&dev->read))
+	{
+		mutex_unlock(&dev->write);
+		return ERESTARTSYS;
+	}
+
+	// buffer not full, return
+	if (dev->insertitions - dev->removals != dev->size)
+		goto out;
+
+	dev->mod_to_kill = name;
+	dev->kill = 1;
+
+	while (dev->kill)
+	{
+		// allow one write
+		up(&dev->full);
+
+		// wait for fifo_write to do its thing
+		if (down_interruptible(&dev->wait_on_kill))
+		{
+			dev->kill = 0;
+			ret = ERESTARTSYS;
+			break;
+		}
+	}
+
+out:
+	mutex_unlock(&dev->read);
+	mutex_unlock(&dev->write);
+	return ret;
+}
+
+/*
+ * Check if a access to dev should be killed or requeued.
+ * Note: interplays with kill request functions; signalling them
+ * 		to do the next up(...) of their respective semaphores!
+ * 
+ * @dev: the device used by this function
+ * @name: the lkm module name, yes the name obtainable from THISMODULE!
+ *
+ * returns:
+ * 	0 as kill command
+ *	-1 for requeueing
+ */
+static int fifo_try_kill(struct fifo_dev* dev, const char* name)
+{
+	int ret = -1;
+	
+	// user access; just queue the access again
+	if (0 == name)
+		ret = -1;
+	// lkm access; kill it, if it is the right one ...
+	else if (0 == strcmp(name, dev->mod_to_kill))
+	{
+		dev->kill = 0;
+		ret = 0;
+		printk(KERN_INFO "--- %s: will be killed!\n", name);
+	}
+
+	up(&dev->wait_on_kill);
+	return ret;
+}
+
+// -------- unblock end --------------------------------------------------
 
 /** 
  * Read the first entry from the buffer.
  * This function may block!
  *
  * @dev: the fifo device
+ * @name: 	name of the calling lkm (obtained from THISMODULE),
+ * 			or 0 for user space.
  *
  * returns: 
  *	ptr to the read struct
- *	ERR_PTR(ENODEV) if dev is a null pointer
+ * 	ERR_PTR(ENODEV) if dev is a null pointer
+ * 	ERR_PTR(EWOULDBLOCK) if calling lkm wants to unload
  *	ERR_PTR(EINTR) if mutex/semaphore locking was interrupted
  */
-struct data_item* fifo_read(struct fifo_dev* dev)
+struct data_item* fifo_read(struct fifo_dev* dev, const char* name)
 {
 	struct data_item* item;
 
@@ -117,6 +300,14 @@ struct data_item* fifo_read(struct fifo_dev* dev)
 	// block if empty
 	if (down_interruptible(&dev->empty))
 		return ERR_PTR(-EINTR);
+
+	if (dev->kill)
+	{
+		if (0 == fifo_try_kill(dev, name))
+			return ERR_PTR(-EWOULDBLOCK);
+		else
+			return fifo_read(dev, name);
+	}
 
 	// block if another read is in progress
 	if (mutex_lock_interruptible(&dev->read))
@@ -139,13 +330,16 @@ struct data_item* fifo_read(struct fifo_dev* dev)
  *
  * @dev: the fifo device
  * @item: the data_item ptr which will be written
+ * @name: 	name of the calling lkm (obtained from THISMODULE),
+ * 			or 0 for user space.
  *
  * returns: 
  *	0 on success
+ * 	EWOULDBLOCK if calling lkm wants to unload
  *	ENODEV if dev is a null pointer
  *	EINTR if mutex/semaphore locking was interrupted
  */
-int fifo_write(struct fifo_dev* dev, struct data_item* item)
+int fifo_write(struct fifo_dev* dev, struct data_item* item, const char* name)
 {
 	if (0 == dev)
 	{
@@ -156,6 +350,14 @@ int fifo_write(struct fifo_dev* dev, struct data_item* item)
 	// block if queue is full
 	if (down_interruptible(&dev->full))
 		return EINTR;
+
+	if (dev->kill)
+	{
+		if (0 == fifo_try_kill(dev, name))
+			return EWOULDBLOCK;
+		else
+			return fifo_write(dev, item, name);
+	}
 
 	// block if another write is in progress
 	if (mutex_lock_interruptible(&dev->write))
@@ -209,6 +411,7 @@ int fifo_init(struct fifo_dev* dev, size_t size)
 
 	sema_init(&dev->full, dev->size);
 	sema_init(&dev->empty, 0);
+	sema_init(&dev->wait_on_kill, 0);
 
 	mutex_init(&dev->read);
 	mutex_init(&dev->write);
@@ -219,6 +422,9 @@ int fifo_init(struct fifo_dev* dev, size_t size)
 
 	dev->front = 0;
 	dev->end = 0;
+
+	dev->kill = 0;
+	dev->mod_to_kill = 0; 
 
 	dev->buffer = kmalloc(dev->size * sizeof(struct data_item*), GFP_KERNEL);
 
