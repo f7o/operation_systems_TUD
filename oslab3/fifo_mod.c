@@ -49,46 +49,30 @@ module_param(size, ulong, 0);
  * If space is available, the given input is inserted at fifo.end
  *
  * @input: the data item to be insterted
- * @name: 	name of the calling lkm (obtained from THISMODULE),
- * 			or 0 for user space.
  * 
  * returns:
  *	0 on success
  *	see fifo_write
  */
-static int put(struct data_item* input, const char* name)
+static int put(struct data_item* input)
 {
-	return fifo_write(&fifo, input, name);
+	return fifo_write(&fifo, input);
 }
 EXPORT_SYMBOL(put);
 
 /*
  * If the fifo is not empty, output will be the item at fifo.front
- *
- * @name: 	name of the calling lkm (obtained from THISMODULE),
- * 			or 0 for user space.
  * 
  * returns:
  *	ptr to a data_item on success
  *	ERR_PTR(see fifo_read)
  */
-struct data_item* get(const char* name)
+struct data_item* get(void)
 {
-	return fifo_read(&fifo, name);	
+	return fifo_read(&fifo);	
 }
 EXPORT_SYMBOL(get);
 
-int request_kill_read(const char* name)
-{
-	return fifo_request_kill_read(&fifo, name);
-}
-EXPORT_SYMBOL(request_kill_read);
-
-int request_kill_write(const char* name)
-{
-	return fifo_request_kill_write(&fifo, name);
-}
-EXPORT_SYMBOL(request_kill_write);
 // -------- exported functions, fifo access end ------------------------------
 
 // -------- user space access --------------------------------------------
@@ -96,7 +80,7 @@ EXPORT_SYMBOL(request_kill_write);
  * checks if the right device trys to access the queue
  *
  * returns:
- *	ENODEV if the opening device node has the wrong major or minor number
+ *	-ENODEV if the opening device node has the wrong major or minor number
  * 	0 on success
  */
 static int dev_open(struct inode* inode, struct file* filp)
@@ -104,7 +88,7 @@ static int dev_open(struct inode* inode, struct file* filp)
 	if (imajor(inode) != MAJOR(dev_no) || iminor(inode) != MINOR(dev_no))
 	{
 		printk(KERN_INFO "---- %s: dev_open failed, wrong device number(s)!\n", mod_name);
-		return ENODEV;
+		return -ENODEV;
 	}
 
 	filp->private_data = &fifo;
@@ -131,9 +115,9 @@ static ssize_t dev_read(struct file *file, char *buf, size_t count, loff_t *ppos
 		return 0;
 
 	// read from fifo
-	di = get(0);
+	di = get();
 	if (IS_ERR(di))
-		return -PTR_ERR(di);
+		return PTR_ERR(di);
 
 	return_str = kmalloc(count * sizeof(char), GFP_KERNEL);
 	real_count = snprintf(return_str, count, "[%lu][%llu] %s",
@@ -182,12 +166,12 @@ static ssize_t dev_write(struct file *file, const char *buf, size_t count, loff_
 	di = alloc_di_str(str);
 	if (IS_ERR(di))
 	{
-		ret =  -PTR_ERR(di);
+		ret = PTR_ERR(di);
 		goto out;
 	}
 
 	// write to fifo
-	ret = -put(di, 0);
+	ret = put(di);
 	if (0 == ret)
 		ret = count;
 	else
@@ -360,7 +344,7 @@ static int __init fifo_mod_init(void)
 		return err;
 	}
 
-	printk(KERN_INFO "--- %s: is being loaded.\n", mod_name);
+	printk(KERN_INFO "--- %s: loaded successfully.\n", mod_name);
 	return err;
 }
 

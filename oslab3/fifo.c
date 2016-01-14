@@ -117,193 +117,6 @@ void free_di(struct data_item* di)
 }
 EXPORT_SYMBOL(free_di);
 
-
-// -------- unblock ------------------------------------------------------
-
-/*
- * Kill a specific, currently blocking reader.
- * Does nothing if devs buffer is not empty!
- * 
- * @dev: the device used by this function
- * @name: the lkm module name, yes the name obtainable from THIS_MODULE!
- *
- * returns:
- *	ENODEV if dev is a null pointer
- *	ERESTARTSYS if waiting for a lock was interrupted
- * 	0 on success, or dev.buffer not empty
- */
-int fifo_request_kill_read(struct fifo_dev* dev, const char* name)
-{
-	int ref_count;
-	int ret = 0;
-
-	if (0 == dev)
-	{
-		printk(KERN_INFO "--- kill failed: null ptr device!\n");
-		return ENODEV;
-	}
-
-	//printk(KERN_INFO "--- %s: request_kill started!\n", name);
-
-	// block if write is in progress
-	if (mutex_lock_interruptible(&dev->write))
-		return ERESTARTSYS;
-
-	// block if read is in progress
-	if (mutex_lock_interruptible(&dev->read))
-	{
-		mutex_unlock(&dev->write);
-		return ERESTARTSYS;
-	}
-
-	//printk(KERN_INFO "--- %s: request_kill acquired both mutexes!\n", name);
-
-	// buffer not empty, return
-	if (dev->insertitions != dev->removals)
-	{
-		printk(KERN_INFO "--- %s: request_kill nothing to do!\n", name);
-		goto out;
-	}
-
-	ref_count = module_refcount(THIS_MODULE);
-	dev->mod_to_kill = name;
-	dev->kill = 1;
-
-	while (dev->kill && ref_count)
-	{
-		// allow one read
-		up(&dev->empty);
-		//printk(KERN_INFO "--- %s: request_kill up!\n", name);
-
-		// wait for fifo_read to do its thing
-		if (down_interruptible(&dev->wait_on_kill))
-		{
-			dev->kill = 0;
-			ret = ERESTARTSYS;
-			break;
-		}
-		--ref_count;
-	}
-
-	//printk(KERN_INFO "--- %s: request_kill terminates, releases mutexes!\n", name);
-
-out:
-	mutex_unlock(&dev->read);
-	mutex_unlock(&dev->write);
-	return ret;
-}
-
-/*
- * Kill a specific, currently blocking writer.
- * Does nothing if devs buffer is not full!
- * 
- * @dev: the device used by this function
- * @name: the lkm module name, yes the name obtainable from THIS_MODULE!
- *
- * returns:
- *	ENODEV if dev is a null pointer
- *	ERESTARTSYS if waiting for a lock was interrupted
- * 	0 on success, or dev.buffer not full
- */
-int fifo_request_kill_write(struct fifo_dev* dev, const char* name)
-{
-	int ref_count;
-	int ret = 0;
-
-	if (0 == dev)
-	{
-		printk(KERN_INFO "--- kill failed: null ptr device!\n");
-		return ENODEV;
-	}
-
-	//printk(KERN_INFO "--- %s: request_kill started!\n", name);
-
-	// block if write is in progress
-	if (mutex_lock_interruptible(&dev->write))
-		return ERESTARTSYS;
-
-	// block if read is in progress
-	if (mutex_lock_interruptible(&dev->read))
-	{
-		mutex_unlock(&dev->write);
-		return ERESTARTSYS;
-	}
-
-	//printk(KERN_INFO "--- %s: request_kill acquired both mutexes!\n", name);
-
-	// buffer not full, return
-	if (dev->insertitions - dev->removals != dev->size)
-	{
-		printk(KERN_INFO "--- %s: request_kill nothing to do!\n", name);
-		goto out;
-	}
-
-	ref_count = module_refcount(THIS_MODULE);
-	dev->mod_to_kill = name;
-	dev->kill = 1;
-
-	while (dev->kill && ref_count)
-	{
-		// allow one write
-		up(&dev->full);
-		//printk(KERN_INFO "--- %s: request_kill up!\n", name);
-
-		// wait for fifo_write to do its thing
-		if (down_interruptible(&dev->wait_on_kill))
-		{
-			dev->kill = 0;
-			ret = ERESTARTSYS;
-			break;
-		}
-		--ref_count;
-	}
-
-	//printk(KERN_INFO "--- %s: request_kill terminates, releases mutexes!\n", name);
-
-out:
-	mutex_unlock(&dev->read);
-	mutex_unlock(&dev->write);
-	return ret;
-}
-
-/*
- * Check if a access to dev should be killed or requeued.
- * Note: interplays with kill request functions; signalling them
- * 		to do the next up(...) of their respective semaphores!
- * 
- * @dev: the device used by this function
- * @name: the lkm module name, yes the name obtainable from THIS_MODULE!
- *
- * returns:
- * 	0 as kill command
- *	-1 for requeueing
- */
-static int fifo_try_kill(struct fifo_dev* dev, const char* name)
-{
-	int ret = -1;
-	
-	// user access; just queue the access again
-	if (0 == name)
-	{
-		//printk(KERN_INFO "--- fifo_try_kill: user, will not be killed!\n");
-		ret = -1;
-	}
-	// lkm access; kill it, if it is the right one ...
-	else if (0 == strcmp(name, dev->mod_to_kill))
-	{
-		dev->kill = 0;
-		ret = 0;
-		printk(KERN_INFO "--- %s: will be killed!\n", name);
-	}
-
-	//printk(KERN_INFO "--- fifo_try_kill: '%s' and '%s' don't match!\n", name, dev->mod_to_kill);
-
-	up(&dev->wait_on_kill);
-	return ret;
-}
-
-// -------- unblock end --------------------------------------------------
-
 /** 
  * Read the first entry from the buffer.
  * This function may block!
@@ -314,11 +127,11 @@ static int fifo_try_kill(struct fifo_dev* dev, const char* name)
  *
  * returns: 
  *	ptr to the read struct
- * 	ERR_PTR(ENODEV) if dev is a null pointer
- * 	ERR_PTR(EWOULDBLOCK) if calling lkm wants to unload
- *	ERR_PTR(EINTR) if mutex/semaphore locking was interrupted
+ * 	ERR_PTR(-ENODEV) if dev is a null pointer
+ * 	ERR_PTR(-ETIME) if there was nothing to read within 5 seconds of waiting
+ *	ERR_PTR(-EINTR) if mutex/semaphore locking was interrupted
  */
-struct data_item* fifo_read(struct fifo_dev* dev, const char* name)
+struct data_item* fifo_read(struct fifo_dev* dev/*, const char* name*/)
 {
 	struct data_item* item;
 
@@ -329,17 +142,8 @@ struct data_item* fifo_read(struct fifo_dev* dev, const char* name)
 	}
 
 	// block if empty
-	if (down_interruptible(&dev->empty))
-		return ERR_PTR(-EINTR);
-
-	if (dev->kill)
-	{
-		//printk(KERN_INFO "--- fifo_read: kill zone reached!\n");
-		if (0 == fifo_try_kill(dev, name))
-			return ERR_PTR(-EWOULDBLOCK);
-		else
-			return fifo_read(dev, name);
-	}
+	if (down_timeout(&dev->empty, 5*HZ))
+		return ERR_PTR(-ETIME);
 
 	// block if another read is in progress
 	if (mutex_lock_interruptible(&dev->read))
@@ -367,34 +171,25 @@ struct data_item* fifo_read(struct fifo_dev* dev, const char* name)
  *
  * returns: 
  *	0 on success
- * 	EWOULDBLOCK if calling lkm wants to unload
- *	ENODEV if dev is a null pointer
- *	EINTR if mutex/semaphore locking was interrupted
+ *	-ENODEV if dev is a null pointer
+ *	-ETIME if there was no empty slot within 5 seconds of waiting
+ *	-EINTR if mutex/semaphore locking was interrupted
  */
-int fifo_write(struct fifo_dev* dev, struct data_item* item, const char* name)
+int fifo_write(struct fifo_dev* dev, struct data_item* item/*, const char* name*/)
 {
 	if (0 == dev)
 	{
 		printk(KERN_INFO "--- fifo_write failed: null ptr device!\n");
-		return ENODEV;
+		return -ENODEV;
 	}
 
 	// block if queue is full
-	if (down_interruptible(&dev->full))
-		return EINTR;
-
-	if (dev->kill)
-	{
-		//printk(KERN_INFO "--- fifo_write: kill zone reached!\n");
-		if (0 == fifo_try_kill(dev, name))
-			return EWOULDBLOCK;
-		else
-			return fifo_write(dev, item, name);
-	}
+	if (down_timeout(&dev->full, 5*HZ))
+		return -ETIME;
 
 	// block if another write is in progress
 	if (mutex_lock_interruptible(&dev->write))
-		return EINTR;
+		return -EINTR;
 
 	// prepare the data_item struct
 	item->qid = dev->seq_no;
@@ -419,8 +214,8 @@ int fifo_write(struct fifo_dev* dev, struct data_item* item, const char* name)
  * @size: buffer size or 0 for default size (BUF_STDSIZE)
  *
  * returns: 
- *	EPERM if device has allready been used 
- * 	ENODEV if dev is a null pointer
+ *	-EPERM if device has already been used 
+ * 	-ENODEV if dev is a null pointer
  * 	0 on success
  */
 int fifo_init(struct fifo_dev* dev, size_t size)
@@ -428,13 +223,13 @@ int fifo_init(struct fifo_dev* dev, size_t size)
 	if (0 == dev)
 	{
 		printk(KERN_INFO "--- fifo initialization failed: no device!\n");
-		return ENODEV;
+		return -ENODEV;
 	}
 
 	if (dev->buffer != 0)
 	{
 		printk(KERN_INFO "--- fifo reinitialization not permitted!\n");
-		return EPERM;
+		return -EPERM;
 	}
 
 	if (size < 1)
@@ -444,7 +239,7 @@ int fifo_init(struct fifo_dev* dev, size_t size)
 
 	sema_init(&dev->full, dev->size);
 	sema_init(&dev->empty, 0);
-	sema_init(&dev->wait_on_kill, 0);
+	//sema_init(&dev->wait_on_kill, 0);
 
 	mutex_init(&dev->read);
 	mutex_init(&dev->write);
@@ -455,9 +250,6 @@ int fifo_init(struct fifo_dev* dev, size_t size)
 
 	dev->front = 0;
 	dev->end = 0;
-
-	dev->kill = 0;
-	dev->mod_to_kill = 0; 
 
 	dev->buffer = kmalloc(dev->size * sizeof(struct data_item*), GFP_KERNEL);
 
@@ -470,7 +262,7 @@ int fifo_init(struct fifo_dev* dev, size_t size)
  * @dev: the fifo device
  *
  * returns:
- * 	ENODEV if dev is a null pointer
+ * 	-ENODEV if dev is a null pointer
  *	0 on success
  */
 int fifo_destroy(struct fifo_dev* dev)
@@ -478,7 +270,7 @@ int fifo_destroy(struct fifo_dev* dev)
 	if (0 == dev)
 	{
 		printk(KERN_INFO "--- fifo destruction failed: no device!\n");
-		return ENODEV;
+		return -ENODEV;
 	}
 
 	// forbid all read or write attempts
