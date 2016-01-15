@@ -37,8 +37,11 @@ void produce(void)
 			continue;
 		}
 
-		gettimeofday(&tv, 0);
-		snprintf(csv, size, "0,%ld,%s", tv.tv_sec, msg);
+		if (success <= 0)
+		{
+			gettimeofday(&tv, 0);
+			snprintf(csv, size, "0,%ld,%s", tv.tv_sec, msg);
+		}
 
 		success = write(file, csv, size);
 		if (success < 0)
@@ -94,7 +97,7 @@ int main(int argc, char* const* argv)
 
 	while ((c = getopt(argc, argv, "p:i:n:s:")) != -1)
 	{
-		printf("%c\n", c);
+		//printf("%c\n", c);
 		switch (c)
 		{
 		case 'p':

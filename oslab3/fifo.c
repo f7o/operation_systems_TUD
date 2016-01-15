@@ -14,7 +14,7 @@ struct fifo_dev;
  *		 has to be of the right format: "0,[creation time],[a message]"
  *
  * returns:
- *	ERR_PTR() if the creation time could not be parsed (from kstrtoull)
+ *	ERR_PTR(-EINVAL) if the creation time could not be parsed (from kstrtoull)
  * 	a pointer to the created struct
  */
 struct data_item* alloc_di_str(char* str)
@@ -46,7 +46,7 @@ struct data_item* alloc_di_str(char* str)
 	if (err)
 	{
 		printk(KERN_INFO "--- could not get time for data_item, string was: %s\n", sub_str_begin);
-		return ERR_PTR(-err);
+		return ERR_PTR(err);
 	}
 
 	return alloc_di(sub_str, time);
@@ -119,19 +119,17 @@ EXPORT_SYMBOL(free_di);
 
 /** 
  * Read the first entry from the buffer.
- * This function may block!
+ * This function may block, but times out at 5s waiting time!
  *
  * @dev: the fifo device
- * @name: 	name of the calling lkm (obtained from THIS_MODULE),
- * 			or 0 for user space.
  *
  * returns: 
- *	ptr to the read struct
+ *	ptr to the read data_item struct
  * 	ERR_PTR(-ENODEV) if dev is a null pointer
  * 	ERR_PTR(-ETIME) if there was nothing to read within 5 seconds of waiting
- *	ERR_PTR(-EINTR) if mutex/semaphore locking was interrupted
+ *	ERR_PTR(-EINTR) if mutex lock was interrupted
  */
-struct data_item* fifo_read(struct fifo_dev* dev/*, const char* name*/)
+struct data_item* fifo_read(struct fifo_dev* dev)
 {
 	struct data_item* item;
 
@@ -162,12 +160,11 @@ struct data_item* fifo_read(struct fifo_dev* dev/*, const char* name*/)
 }
 
 /**
- * read the first entry from the buffer
+ * Write a data_item to the buffer.
+ * This function may block, but times out at 5s waiting time!
  *
  * @dev: the fifo device
  * @item: the data_item ptr which will be written
- * @name: 	name of the calling lkm (obtained from THIS_MODULE),
- * 			or 0 for user space.
  *
  * returns: 
  *	0 on success
@@ -175,7 +172,7 @@ struct data_item* fifo_read(struct fifo_dev* dev/*, const char* name*/)
  *	-ETIME if there was no empty slot within 5 seconds of waiting
  *	-EINTR if mutex/semaphore locking was interrupted
  */
-int fifo_write(struct fifo_dev* dev, struct data_item* item/*, const char* name*/)
+int fifo_write(struct fifo_dev* dev, struct data_item* item)
 {
 	if (0 == dev)
 	{
@@ -237,10 +234,23 @@ int fifo_init(struct fifo_dev* dev, size_t size)
 	else
 		dev->size = size;
 
+	/*
+	 * init semas:
+	 * fifo_write needs to aquire dev.full to be able to write a
+	 * data_item to the queue. (-> init with dev.size)
+	 * after writing to the queue, an up() call is performed on empty
+	 *
+	 * fifo_read needs to aquire dev.empty to be able to read a
+	 * data_item from the queue. (-> init with 0)
+	 * after reading from the queue, an up() call is performed on full
+	 */
 	sema_init(&dev->full, dev->size);
 	sema_init(&dev->empty, 0);
-	//sema_init(&dev->wait_on_kill, 0);
 
+	/*
+	 * only needed to ensure that there is one and only one access at
+	 * each end of the fifo. (-> prevents data corruption)
+	 */ 
 	mutex_init(&dev->read);
 	mutex_init(&dev->write);
 
@@ -281,7 +291,7 @@ int fifo_destroy(struct fifo_dev* dev)
 	while (dev->front != dev->end)
 	{
 		kfree(*(dev->buffer + dev->front));
-		++dev->front;
+		dev->front = (dev->front +1) % dev->size;
 	}
 
 	// kill all mutexes

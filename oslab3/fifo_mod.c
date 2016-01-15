@@ -111,7 +111,7 @@ static ssize_t dev_read(struct file *file, char *buf, size_t count, loff_t *ppos
 	ssize_t real_count = 0;
 
 	// only one read!
-	if (*ppos != 0)		// possible race condition? file.ppos should (TM) be per thread?
+	if (*ppos != 0)
 		return 0;
 
 	// read from fifo

@@ -20,6 +20,9 @@ MODULE_LICENSE("GPL");
 // work queue struct ptr
 static struct workqueue_struct* wqs;
 
+// pointer to the data_item to send
+static struct data_item* di_msg = 0;
+
 // msg of the LKM
 static char* msg = "kernel_msg_foobar";
 module_param(msg, charp, 0);
@@ -47,25 +50,30 @@ extern struct data_item* alloc_di(const char*, unsigned long long);
 void produce(struct work_struct* ws)
 {
 	int err = 0;
-	struct data_item* di;
 	struct timeval tv;
 
-	do_gettimeofday(&tv);
+	// only create a new msg if there is no old one
+	if (0 == di_msg)
+	{
+		do_gettimeofday(&tv);
+		di_msg = alloc_di(msg, tv.tv_sec);
+	}
 
-	di = alloc_di(msg, tv.tv_sec);
-
-	err = put(di, THIS_MODULE->name);
+	err = put(di_msg, THIS_MODULE->name);
 	if (err)
 	{
-		free_di(di);
-		if (-ETIME == PTR_ERR(di))
+		if (-ETIME == PTR_ERR(di_msg))
 			printk(KERN_INFO "--- %s: put timeout.\n", mod_name);
 		else
 			printk(KERN_INFO "--- %s: put failed.\n", mod_name);
 	}
+	else
+		di_msg = 0;		// msg was send successfully, get a new one next time
 
 	if (continue_exec)
 		queue_delayed_work(wqs, &work, interval_ms*HZ/1000);
+	else if (di_msg)
+		free_di(di_msg); // free the pending message before unloading
 }
 
 /*
