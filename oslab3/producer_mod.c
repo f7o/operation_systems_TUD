@@ -43,7 +43,7 @@ DECLARE_DELAYED_WORK(work, produce);
 // -------- globals end --------------------------------------------------
 
 // import from other modules
-extern int put(struct data_item*, const char*);
+extern int put(struct data_item*);
 extern void free_di(struct data_item*);
 extern struct data_item* alloc_di(const char*, unsigned long long);
 
@@ -59,14 +59,11 @@ void produce(struct work_struct* ws)
 		di_msg = alloc_di(msg, tv.tv_sec);
 	}
 
-	err = put(di_msg, THIS_MODULE->name);
-	if (err)
-	{
-		if (-ETIME == PTR_ERR(di_msg))
-			printk(KERN_INFO "--- %s: put timeout.\n", mod_name);
-		else
-			printk(KERN_INFO "--- %s: put failed.\n", mod_name);
-	}
+	err = put(di_msg);
+	if (-ETIME == err)
+		printk(KERN_INFO "--- %s: put timeout.\n", mod_name);
+	else if (err)
+		printk(KERN_INFO "--- %s: put failed.\n", mod_name);
 	else
 		di_msg = 0;		// msg was send successfully, get a new one next time
 

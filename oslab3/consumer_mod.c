@@ -35,12 +35,12 @@ DECLARE_DELAYED_WORK(work, consume);
 // -------- globals end --------------------------------------------------
 
 // import from other modules
-extern struct data_item* get(const char*);
+extern struct data_item* get();
 extern void free_di(struct data_item*);
 
 void consume(struct work_struct* ws)
 {
-	struct data_item* di = get(THIS_MODULE->name);
+	struct data_item* di = get();
 	if (IS_ERR(di))
 	{
 		if (-ETIME == PTR_ERR(di))
