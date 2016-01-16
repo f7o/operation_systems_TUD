@@ -35,7 +35,7 @@ DECLARE_DELAYED_WORK(work, consume);
 // -------- globals end --------------------------------------------------
 
 // import from other modules
-extern struct data_item* get();
+extern struct data_item* get(void);
 extern void free_di(struct data_item*);
 
 void consume(struct work_struct* ws)
