@@ -1,0 +1,121 @@
+#!/bin/bash
+set -m 
+
+########### GLOBAL VARS ########
+id=-1
+size=32
+
+########### FUNCTIONS ###########
+function insert {
+  for((i=0;i<${1};++i))
+  do
+    let id++
+    printf "Inserting: ${id},01451001600,TestMessage${id}\n"
+    sudo echo -n "${id},1451001600,Testmessage${id}!" > /dev/deeds_fifo
+    if [ "${size}" == "$(sudo cat /proc/deeds_fifo_stats | grep used | tr -dc '0-9')" ] 
+    	then
+	  printf "Fifo is full, could not insert item\n"	
+	else
+    	  printf "Insertion successfull\n"
+    fi
+  done
+}
+function extract {
+  for((i=0;i<${1};i++))
+  do
+    printf "Sending read command..\n"
+    extract_value=$(sudo cat /dev/deeds_fifo)
+    if [ -n "${extract_value}" ] 
+	then
+          printf "Extracted: ${extract_value}\n"
+    fi
+  done
+}
+function used_test {
+  found_used=$(sudo cat /proc/deeds_fifo_stats | grep used | tr -dc '0-9')
+  expected_used=$1
+  echo "There should be $expected_used item(s) and there are/is ${found_used}"
+  if [ ${found_used} != ${expected_used} ] 
+ 	  then
+	    printf "ERROR: Test failed!\n"
+  fi
+}
+function continue {
+  read -rsp $'Please press any key to contine..\n' -n1 key
+}
+########## FUNTIONS #############
+
+sudo insmod fifo_lkm.ko ${size}
+
+if [ -e /proc/deeds_fifo_stats ]
+	then
+	  printf "Fifo loaded successfully!\n"
+	else
+	  printf "Error: Fifo not loaded!\n"
+fi
+
+
+printf "\nStarting simple insert/read test\n"
+printf "Going to insert one item and then going to extract it\n"
+continue
+printf "\n"
+
+insert "1"
+used_test "1"
+
+extract "1"
+used_test "0"
+
+printf "\nStarting reading-when-empty test\n"
+printf "Going to fork a read command on an empty fifo\n"
+continue
+printf "\n"
+
+printf "The first one will timeout\n"
+extract "1" &
+sleep 6
+
+printf "\n"
+continue
+printf "\nNow we will insert one element while the read is pending\n"
+extract "1" &
+sleep 3
+insert "1"
+
+sleep 1
+continue
+printf "\nNow we will insert three elements while the read is pending\n"
+extract "1" &
+sleep 3
+insert "3"
+
+printf "\nStarting write-when-full test\n"
+printf "Filling up the fifo\n"
+continue
+insert "29" 
+used_test "32"
+printf "\n"
+continue
+
+printf "The first one will timeout\n"
+insert "1" &
+sleep 6
+
+printf "\n"
+continue
+printf "\nNow we will extract one element while the write is pending\n"
+insert "1" &
+sleep 2
+extract "1"
+
+sleep 1
+continue
+
+sudo rmmod fifo_lkm
+printf "\n"
+if [ -e /proc/deeds_fifo_stats ]
+	then
+	  echo "ERROR: Fifo could not be unloaded!"
+	else
+	  echo "Fifo successfully unloaded!"
+fi
