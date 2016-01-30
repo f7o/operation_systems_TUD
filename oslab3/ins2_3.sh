@@ -1,12 +1,8 @@
 #!/bin/bash
 
 _term(){
-	echo "=== kill all user processes"
-	kill "$uprod1"
-	kill "$uprod2"
-	kill "$uprod3"
-	kill "$ucons1"
-	kill "$ucons2"
+	echo "=== kill all"
+	sudo ./rmmod.sh
 	kill "$kernlog"
 }
 
