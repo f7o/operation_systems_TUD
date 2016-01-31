@@ -1,28 +1,29 @@
 #!/bin/bash
+echo "--- please enter the desired interval_ms for the kernel consumer!"
+echo "--- choose 167 for a full queue and around 50 for an empty queue."
+read interval
 
 _term(){
-	echo "=== kill all"
-	sudo ./rmmod.sh
+	echo "--- kill all"
+	sudo ./kill_all.sh
 	kill "$kernlog"
 }
 
-echo "=== delete files from previous run"
+echo "--- delete user_log file from previous run"
+sudo rm -f user_log
+sudo touch user_log
 
-rm ./user_log
-rm ./kernel_log
-sudo dmesg -C
-
-echo "=== load lkms"
-
+echo "--- load lkms..."
 sudo insmod fifo_lkm.ko size=43
 sudo insmod producer_lkm1.ko interval_ms=500 msg="this_is_a_funny_message_hahaha" mod_name=kprod1
 sudo insmod producer_lkm2.ko interval_ms=500 msg="this_is_a_funny_message_too..." mod_name=kprod2
-sudo insmod consumer_lkm1.ko interval_ms=167 mod_name=kcons1
-
-echo "=== all lkms loaded, executing generic_users..."
+sudo insmod consumer_lkm1.ko interval_ms="$interval" mod_name=kcons1
+echo "--- all lkms loaded"
 
 ./kernel_loging.sh &
 kernlog=$!
+
+echo "--- execute all generic_user programs"
 ./generic_user -p "user1_is_funny" -i 333 -n "uprod1" &
 uprod1=$!
 ./generic_user -p "user2_is_very_funny" -i 333 -n "uprod2" &
