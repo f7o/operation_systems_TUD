@@ -1,22 +1,47 @@
 #!/bin/bash
 set -m 
+OPTIND=1
 
 ########### GLOBAL VARS ########
 id=-1
 size=32
+autoyes=0
+
+########## GETOPTS ##########
+while getopts "y" opt; do
+	case "$opt" in
+	y)
+	autoyes=1
+	;;
+	esac
+done
+
+shift $((OPTIND-1))
+[ "$1" = "--" ] && shift
 
 ########### FUNCTIONS ###########
 function insert {
   for((i=0;i<${1};++i))
   do
+    previous_used="$(sudo cat /proc/deeds_fifo_stats | grep used | tr -dc '0-9')"
     let id++
     printf "Inserting: ${id},01451001600,TestMessage${id}\n"
     sudo echo -n "${id},1451001600,Testmessage${id}!" > /dev/deeds_fifo
-    if [ "${size}" == "$(sudo cat /proc/deeds_fifo_stats | grep used | tr -dc '0-9')" ] 
-    	then
-	  printf "Fifo is full, could not insert item\n"	
-	else
-    	  printf "Insertion successfull\n"
+    after_used="$(sudo cat /proc/deeds_fifo_stats | grep used | tr -dc '0-9')" 
+
+    if [ "${after_used}" -gt "${previous_used}" ]
+	then
+	  printf "Insertion successfull\n"
+    fi
+
+    if [ "${size}" == "${previous_used}" ] && [ "${previous_used}" == "${after_used}" ]
+	then
+	  printf "Could not insert item, Fifo is full\n"
+    fi
+    
+    if [ "${size}" == "${after_used}" ] && [ "${previous_used}" != "${after_used}" ]
+	then
+	  printf "Fifo is full now, this was the last item\n"
     fi
   done
 }
@@ -41,7 +66,10 @@ function used_test {
   fi
 }
 function continue {
-  read -rsp $'Please press any key to contine..\n' -n1 key
+  if [ "${autoyes}" == 0 ] 
+	then
+  	  read -rsp $'Please press any key to contine..\n' -n1 key
+  fi
 }
 ########## FUNTIONS #############
 
@@ -92,7 +120,7 @@ insert "3"
 printf "\nStarting write-when-full test\n"
 printf "Filling up the fifo\n"
 continue
-insert "29" 
+insert "30" 
 used_test "32"
 printf "\n"
 continue
@@ -109,6 +137,33 @@ sleep 2
 extract "1"
 
 sleep 1
+continue
+
+printf "\nStarting multiple reader test\n"
+printf "Forking 3 reader to read the fifo in parallel\n"
+continue
+
+extract "10" & extract "10" &  extract "10" & 
+sleep 3
+continue
+
+printf "\nStarting multiple writer test\n"
+printf "Forking 3 writers to write the fifo in parallel\n"
+continue
+
+insert "10" & insert "10" & insert "10" &
+sleep 3
+continue
+
+printf "\nStarting multiple writer&reader test\n"
+printf "Forking 3 writer and the reader in parallel\n"
+continue
+
+insert "20" & extract "20" & insert "20" & extract "20" & insert "20" & extract "20" &
+sleep 5
+continue
+
+printf "\nTest finished\n"
 continue
 
 sudo rmmod fifo_lkm
